@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getAppUser } from "@/lib/auth";
 import {
   processPendingDocuments,
+  summarizeSync,
   syncKnowledgeFiles,
 } from "@/lib/knowledge/pipeline";
 
@@ -19,11 +20,20 @@ export async function POST(request: Request) {
 
   if (action === "sync" || action === "sync_and_process") {
     const synced = await syncKnowledgeFiles(user.id);
+    const summary = summarizeSync(synced);
     if (action === "sync") {
-      return NextResponse.json({ synced });
+      return NextResponse.json({ synced, summary });
     }
     const processed = await processPendingDocuments(user.id, body.limit ?? 30);
-    return NextResponse.json({ synced, processed });
+    const processedOk = processed.filter((p) => p.ok !== false).length;
+    const processedFail = processed.length - processedOk;
+    return NextResponse.json({
+      synced,
+      summary,
+      processed,
+      processedOk,
+      processedFail,
+    });
   }
 
   if (action === "process" && body.documentId) {

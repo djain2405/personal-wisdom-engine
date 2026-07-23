@@ -153,7 +153,12 @@ async function readDocumentContent(filePath: string): Promise<{
 export async function syncKnowledgeFiles(userId: string) {
   const supabase = await createClient();
   const files = await walkKnowledgeFiles(KNOWLEDGE_ROOT);
-  const synced: { path: string; id: string; status: string }[] = [];
+  const synced: {
+    path: string;
+    id: string;
+    status: string;
+    action: "new" | "updated" | "unchanged" | "requeued" | "error";
+  }[] = [];
 
   for (const file of files) {
     const rel = path.relative(KNOWLEDGE_ROOT, file).replace(/\\/g, "/");
@@ -166,6 +171,7 @@ export async function syncKnowledgeFiles(userId: string) {
         path: rel,
         id: "",
         status: `error:${e instanceof Error ? e.message : "read failed"}`,
+        action: "error",
       });
       continue;
     }
@@ -179,11 +185,38 @@ export async function syncKnowledgeFiles(userId: string) {
       .eq("path", rel)
       .maybeSingle();
 
-    if (existing && (existing as { raw_text: string }).raw_text === content) {
+    const row = existing as {
+      id: string;
+      raw_text: string;
+      status: string;
+    } | null;
+
+    // Same content already ready → skip
+    if (row && row.raw_text === content && row.status === "ready") {
       synced.push({
         path: rel,
-        id: (existing as { id: string }).id,
-        status: (existing as { status: string }).status,
+        id: row.id,
+        status: "ready",
+        action: "unchanged",
+      });
+      continue;
+    }
+
+    // Same content but stuck pending/error → requeue for processing
+    if (row && row.raw_text === content && row.status !== "ready") {
+      await supabase
+        .from("documents")
+        .update({
+          status: "pending",
+          error_message: null,
+          processed_at: null,
+        })
+        .eq("id", row.id);
+      synced.push({
+        path: rel,
+        id: row.id,
+        status: "pending",
+        action: "requeued",
       });
       continue;
     }
@@ -211,17 +244,39 @@ export async function syncKnowledgeFiles(userId: string) {
         path: rel,
         id: "",
         status: `error:${error?.message ?? "upsert failed"}`,
+        action: "error",
       });
       continue;
     }
+
     synced.push({
       path: rel,
       id: (data as { id: string }).id,
       status: "pending",
+      action: row ? "updated" : "new",
     });
   }
 
   return synced;
+}
+
+export function summarizeSync(
+  synced: {
+    action: "new" | "updated" | "unchanged" | "requeued" | "error";
+  }[],
+) {
+  const summary = {
+    total: synced.length,
+    new: 0,
+    updated: 0,
+    unchanged: 0,
+    requeued: 0,
+    error: 0,
+  };
+  for (const s of synced) {
+    summary[s.action] += 1;
+  }
+  return summary;
 }
 
 async function mergeOrCreatePrinciple(

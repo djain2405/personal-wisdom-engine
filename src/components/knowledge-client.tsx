@@ -23,9 +23,25 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed");
-      setLog(
-        `Synced ${data.synced?.length ?? 0} files; processed ${data.processed?.length ?? 0}.`,
-      );
+      const s = data.summary ?? {};
+      const queued =
+        (s.new ?? 0) + (s.updated ?? 0) + (s.requeued ?? 0);
+      const processedCount = data.processed?.length ?? 0;
+      const parts = [
+        `Found ${s.total ?? data.synced?.length ?? 0} files on disk`,
+        `${s.unchanged ?? 0} already processed`,
+        `${queued} queued for AI`,
+        `AI finished ${processedCount}` +
+          (data.processedFail
+            ? ` (${data.processedFail} failed)`
+            : ""),
+      ];
+      if (queued === 0 && processedCount === 0) {
+        parts.push(
+          "No new/changed files to process. On Vercel, new files must be pushed to GitHub and redeployed first.",
+        );
+      }
+      setLog(parts.join(" · "));
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed");
@@ -44,7 +60,8 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
             <code className="text-xs">.txt</code>, or{" "}
             <code className="text-xs">.pdf</code> into{" "}
             <code className="text-xs">knowledge/</code> (folders optional), then
-            sync.
+            sync. On the live site, commit &amp; push new files so Vercel can
+            see them.
           </p>
         </div>
         <Button className="w-full shrink-0 sm:w-auto" onClick={sync} disabled={loading}>
