@@ -78,6 +78,28 @@ Scan files locally:
 npm run ingest
 ```
 
+## Deploy to Vercel
+
+1. Push this repo to GitHub (private recommended — knowledge PDFs are personal).
+2. Import the project in [vercel.com/new](https://vercel.com/new).
+3. Add these **Environment Variables** (Production + Preview):
+
+| Name | Notes |
+|------|--------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | anon / publishable key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Legacy `service_role` key (required for personal mode) |
+| `PERSONAL_MODE` | `true` |
+| `NEXT_PUBLIC_PERSONAL_MODE` | `true` |
+| `AI_PROVIDER` | `openai` (or `claude` / `gemini`) |
+| `OPENAI_API_KEY` | Required for embeddings + if using OpenAI coach |
+| `ANTHROPIC_API_KEY` | Only if `AI_PROVIDER=claude` |
+| `GOOGLE_AI_API_KEY` | Only if `AI_PROVIDER=gemini` |
+
+4. Deploy. Knowledge files committed under `knowledge/` ship with the build — Sync in production still works against those files.
+
+5. For long PDF syncs, Hobby plans cap serverless duration; Pro allows higher `maxDuration` (this repo sets knowledge sync to 300s).
+
 ## Surfaces
 
 | Route | Feature |
