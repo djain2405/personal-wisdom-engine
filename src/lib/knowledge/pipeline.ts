@@ -113,6 +113,48 @@ function titleFromFilename(filePath: string) {
     .trim();
 }
 
+async function readPdfText(filePath: string): Promise<string> {
+  const buf = await fs.readFile(filePath);
+
+  // unpdf is reliable on Vercel/serverless (pdf-parse often fails there)
+  try {
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(buf));
+    const extracted = await extractText(pdf, { mergePages: true });
+    const text = Array.isArray(extracted.text)
+      ? extracted.text.join("\n")
+      : String(extracted.text ?? "");
+    const content = text.trim();
+    if (content) return content;
+  } catch (e) {
+    // fall through to pdf-parse
+    console.warn(
+      "unpdf failed, trying pdf-parse:",
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  try {
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: buf });
+    try {
+      const result = await parser.getText();
+      const content = (result.text || "").trim();
+      if (content) return content;
+    } finally {
+      if (typeof parser.destroy === "function") {
+        await parser.destroy();
+      }
+    }
+  } catch (e) {
+    throw new Error(
+      `PDF extract failed: ${e instanceof Error ? e.message : "unknown error"}`,
+    );
+  }
+
+  throw new Error("No extractable text in PDF (may be scanned/image-only)");
+}
+
 async function readDocumentContent(filePath: string): Promise<{
   title: string;
   content: string;
@@ -120,21 +162,8 @@ async function readDocumentContent(filePath: string): Promise<{
   const ext = path.extname(filePath).toLowerCase();
 
   if (ext === ".pdf") {
-    const { PDFParse } = await import("pdf-parse");
-    const buf = await fs.readFile(filePath);
-    const parser = new PDFParse({ data: buf });
-    try {
-      const result = await parser.getText();
-      const content = (result.text || "").trim();
-      if (!content) {
-        throw new Error("No extractable text in PDF (may be scanned/image-only)");
-      }
-      return { title: titleFromFilename(filePath), content };
-    } finally {
-      if (typeof parser.destroy === "function") {
-        await parser.destroy();
-      }
-    }
+    const content = await readPdfText(filePath);
+    return { title: titleFromFilename(filePath), content };
   }
 
   const raw = await fs.readFile(filePath, "utf8");

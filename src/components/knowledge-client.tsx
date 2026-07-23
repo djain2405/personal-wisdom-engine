@@ -36,7 +36,16 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
             ? ` (${data.processedFail} failed)`
             : ""),
       ];
-      if (queued === 0 && processedCount === 0) {
+      if (s.error) {
+        parts.push(`${s.error} failed to read`);
+        const errs = (data.synced ?? [])
+          .filter((x: { action?: string }) => x.action === "error")
+          .slice(0, 3)
+          .map((x: { path: string; status: string }) => `${x.path}: ${x.status}`)
+          .join("; ");
+        if (errs) setError(errs);
+      }
+      if (queued === 0 && processedCount === 0 && !s.error) {
         parts.push(
           "No new/changed files to process. On Vercel, new files must be pushed to GitHub and redeployed first.",
         );
