@@ -34,19 +34,24 @@ export function SearchClient() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-3xl text-stone-900">Search</h1>
-        <p className="mt-1 text-stone-600">
+        <h1 className="font-display text-2xl text-stone-900 md:text-3xl">Search</h1>
+        <p className="mt-1 text-sm text-stone-600 md:text-base">
           Find everything about confidence, identity, gratitude, discipline…
         </p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row">
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search your wisdom"
           onKeyDown={(e) => e.key === "Enter" && run()}
+          className="w-full"
         />
-        <Button onClick={run} disabled={loading || !q.trim()}>
+        <Button
+          className="w-full shrink-0 sm:w-auto"
+          onClick={run}
+          disabled={loading || !q.trim()}
+        >
           {loading ? "Searching…" : "Search"}
         </Button>
       </div>

@@ -1,6 +1,6 @@
 import { Fraunces, Outfit } from "next/font/google";
 import "./globals.css";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 const display = Fraunces({
   variable: "--font-display",
@@ -16,6 +16,12 @@ export const metadata: Metadata = {
   title: "Personal Wisdom Engine",
   description:
     "An AI that learns your philosophy and helps you live according to it",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

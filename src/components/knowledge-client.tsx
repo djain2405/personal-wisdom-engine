@@ -36,10 +36,10 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl text-stone-900">Knowledge</h1>
-          <p className="mt-1 text-stone-600">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl text-stone-900 md:text-3xl">Knowledge</h1>
+          <p className="mt-1 text-sm text-stone-600 md:text-base">
             Drop any <code className="text-xs">.md</code>,{" "}
             <code className="text-xs">.txt</code>, or{" "}
             <code className="text-xs">.pdf</code> into{" "}
@@ -47,7 +47,7 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
             sync.
           </p>
         </div>
-        <Button onClick={sync} disabled={loading}>
+        <Button className="w-full shrink-0 sm:w-auto" onClick={sync} disabled={loading}>
           {loading ? "Syncing…" : "Sync knowledge"}
         </Button>
       </div>

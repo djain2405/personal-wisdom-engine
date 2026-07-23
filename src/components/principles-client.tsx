@@ -42,20 +42,20 @@ export function PrinciplesClient({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-3xl text-stone-900">Principles</h1>
-        <p className="mt-1 text-stone-600">
+        <h1 className="font-display text-2xl text-stone-900 md:text-3xl">Principles</h1>
+        <p className="mt-1 text-sm text-stone-600 md:text-base">
           Browse and synthesize what you&apos;ve learned across sources.
         </p>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <Input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder='e.g. discipline, confidence, relationships'
-          className="max-w-md"
+          className="w-full sm:max-w-md"
         />
         <select
-          className="h-10 rounded-md border border-stone-300 bg-white px-3 text-sm"
+          className="h-11 w-full rounded-md border border-stone-300 bg-white px-3 text-base sm:h-10 sm:w-auto sm:text-sm"
           value={category}
           onChange={(e) => setCategory(e.target.value)}
         >
@@ -66,12 +66,19 @@ export function PrinciplesClient({
             </option>
           ))}
         </select>
-        <Button onClick={() => search(false)} disabled={loading}>
-          Search
-        </Button>
-        <Button variant="secondary" onClick={() => search(true)} disabled={loading || !q}>
-          Synthesize
-        </Button>
+        <div className="flex gap-2">
+          <Button className="flex-1 sm:flex-none" onClick={() => search(false)} disabled={loading}>
+            Search
+          </Button>
+          <Button
+            className="flex-1 sm:flex-none"
+            variant="secondary"
+            onClick={() => search(true)}
+            disabled={loading || !q}
+          >
+            Synthesize
+          </Button>
+        </div>
       </div>
       {error && <p className="text-sm text-red-700">{error}</p>}
       {synthesis && (

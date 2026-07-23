@@ -40,10 +40,10 @@ export function CoachHomeClient({
     return (
       <div className="space-y-4">
         <div>
-          <h1 className="font-display text-3xl text-stone-900 animate-rise">
+          <h1 className="font-display text-2xl text-stone-900 animate-rise md:text-3xl">
             Coach Mode
           </h1>
-          <p className="mt-1 text-stone-600 animate-rise-delay-1">
+          <p className="mt-1 text-sm text-stone-600 animate-rise-delay-1 md:text-base">
             Your daily operating system — identity first, then action.
           </p>
         </div>
@@ -52,7 +52,7 @@ export function CoachHomeClient({
             {error ||
               "No brief yet. Configure AI keys and generate today's coach brief."}
           </p>
-          <Button className="mt-4" onClick={regenerate} disabled={loading}>
+          <Button className="mt-4 w-full sm:w-auto" onClick={regenerate} disabled={loading}>
             {loading ? "Generating…" : "Generate today's brief"}
           </Button>
         </Card>
@@ -74,22 +74,27 @@ export function CoachHomeClient({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-3xl text-stone-900 animate-rise">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl text-stone-900 animate-rise md:text-3xl">
             Coach Mode
           </h1>
-          <p className="mt-1 text-stone-600 animate-rise-delay-1">
+          <p className="mt-1 text-sm text-stone-600 animate-rise-delay-1 md:text-base">
             {brief.brief_date} — shape the day around who you&apos;re becoming.
           </p>
         </div>
-        <div className="flex gap-2 animate-rise-delay-2">
-          <Button variant="secondary" onClick={regenerate} disabled={loading}>
+        <div className="flex w-full flex-col gap-2 animate-rise-delay-2 sm:w-auto sm:flex-row">
+          <Button
+            variant="secondary"
+            className="w-full sm:w-auto"
+            onClick={regenerate}
+            disabled={loading}
+          >
             {loading ? "Regenerating…" : "Regenerate"}
           </Button>
           <Link
             href="/reviews/evening"
-            className="inline-flex h-10 items-center rounded-md bg-teal-800 px-4 text-sm font-medium text-white hover:bg-teal-900"
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-teal-800 px-4 text-sm font-medium text-white hover:bg-teal-900 sm:w-auto"
           >
             Evening review
           </Link>
