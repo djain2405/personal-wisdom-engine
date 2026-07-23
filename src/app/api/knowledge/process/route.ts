@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAppUser } from "@/lib/auth";
 import {
+  getKnowledgeInventory,
   processPendingDocuments,
   summarizeSync,
   syncKnowledgeFiles,
@@ -9,8 +10,25 @@ import {
 export const maxDuration = 300;
 export const runtime = "nodejs";
 
+export async function GET() {
+  const { user } = await getAppUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const inventory = await getKnowledgeInventory(user.id);
+    return NextResponse.json(inventory);
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "Inventory failed" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function POST(request: Request) {
-  const { supabase, user } = await getAppUser();
+  const { user } = await getAppUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -25,14 +43,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ synced, summary });
     }
     const processed = await processPendingDocuments(user.id, body.limit ?? 30);
-    const processedOk = processed.filter((p) => p.ok !== false).length;
+    const processedOk = processed.filter((p) => (p as { ok?: boolean }).ok !== false).length;
     const processedFail = processed.length - processedOk;
+    const inventory = await getKnowledgeInventory(user.id);
     return NextResponse.json({
       synced,
       summary,
       processed,
       processedOk,
       processedFail,
+      inventory,
     });
   }
 
@@ -48,19 +68,4 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
-}
-
-export async function GET() {
-  const { supabase, user } = await getAppUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { data } = await supabase
-    .from("documents")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("updated_at", { ascending: false });
-
-  return NextResponse.json({ documents: data ?? [] });
 }

@@ -96,6 +96,71 @@ async function walkKnowledgeFiles(dir: string): Promise<string[]> {
   return out;
 }
 
+export async function listKnowledgeDiskPaths(): Promise<string[]> {
+  const files = await walkKnowledgeFiles(KNOWLEDGE_ROOT);
+  return files
+    .map((f) => path.relative(KNOWLEDGE_ROOT, f).replace(/\\/g, "/"))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+export async function getKnowledgeInventory(userId: string) {
+  const supabase = await createClient();
+  const diskPaths = await listKnowledgeDiskPaths();
+  const { data: docs, error } = await supabase
+    .from("documents")
+    .select(
+      "id, title, path, status, error_message, source_type, processed_at, updated_at",
+    )
+    .eq("user_id", userId)
+    .order("path", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  const byPath = new Map(
+    ((docs ?? []) as { path: string }[]).map((d) => [d.path, d]),
+  );
+
+  const rows = diskPaths.map((diskPath) => {
+    const doc = byPath.get(diskPath) as
+      | {
+          id: string;
+          title: string;
+          path: string;
+          status: string;
+          error_message: string | null;
+          source_type: string;
+          processed_at: string | null;
+          updated_at: string;
+        }
+      | undefined;
+    return {
+      path: diskPath,
+      title: doc?.title ?? titleFromFilename(diskPath),
+      source_type: doc?.source_type ?? sourceTypeFromPath(path.join(KNOWLEDGE_ROOT, diskPath)),
+      inDatabase: Boolean(doc),
+      id: doc?.id ?? null,
+      status: doc?.status ?? "not_in_database",
+      error_message: doc?.error_message ?? null,
+      processed_at: doc?.processed_at ?? null,
+    };
+  });
+
+  const dbOnly = ((docs ?? []) as { path: string }[]).filter(
+    (d) => !diskPaths.includes(d.path),
+  );
+
+  const missing = rows.filter((r) => !r.inDatabase || r.status !== "ready");
+
+  return {
+    diskCount: diskPaths.length,
+    dbCount: (docs ?? []).length,
+    readyCount: rows.filter((r) => r.status === "ready").length,
+    missingCount: missing.length,
+    rows,
+    dbOnly,
+  };
+}
+
 function sourceTypeFromPath(filePath: string): SourceType {
   const rel = path.relative(KNOWLEDGE_ROOT, filePath);
   const parts = rel.split(path.sep);
@@ -221,14 +286,21 @@ export async function syncKnowledgeFiles(userId: string) {
     } | null;
 
     // Same content already ready → skip
-    if (row && row.raw_text === content && row.status === "ready") {
-      synced.push({
-        path: rel,
-        id: row.id,
-        status: "ready",
-        action: "unchanged",
-      });
-      continue;
+    // Compare fingerprints to avoid loading issues / tiny extract drift hiding files
+    if (row && row.status === "ready" && row.raw_text != null) {
+      const same =
+        row.raw_text === content ||
+        (row.raw_text.length === content.length &&
+          row.raw_text.slice(0, 120) === content.slice(0, 120));
+      if (same) {
+        synced.push({
+          path: rel,
+          id: row.id,
+          status: "ready",
+          action: "unchanged",
+        });
+        continue;
+      }
     }
 
     // Same content but stuck pending/error → requeue for processing
