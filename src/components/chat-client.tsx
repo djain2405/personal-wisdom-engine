@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
+import { CoachMarkdown } from "@/components/coach-markdown";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
@@ -12,7 +12,42 @@ export function ChatClient() {
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hydrating, setHydrating] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/chat");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load chat");
+        if (cancelled) return;
+        if (data.conversationId) setConversationId(data.conversationId);
+        if (Array.isArray(data.messages)) {
+          setMessages(
+            data.messages.filter(
+              (m: Msg) => m.role === "user" || m.role === "assistant",
+            ),
+          );
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load chat");
+        }
+      } finally {
+        if (!cancelled) setHydrating(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
   async function send() {
     if (!input.trim() || loading) return;
@@ -38,46 +73,104 @@ export function ChatClient() {
     }
   }
 
+  async function startNewChat() {
+    setMessages([]);
+    setConversationId(null);
+    setError(null);
+  }
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="font-display text-3xl text-stone-900">Chat Coach</h1>
-        <p className="mt-1 text-stone-600">
-          Talk through anxiety, conflict, or decisions — grounded in your principles.
-        </p>
+    <div className="flex h-[calc(100vh-4rem)] flex-col gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-3xl text-stone-900">Chat Coach</h1>
+          <p className="mt-1 text-stone-600">
+            Talk through anxiety, conflict, or decisions — grounded in your
+            principles.
+          </p>
+        </div>
+        <Button variant="secondary" type="button" onClick={startNewChat}>
+          New chat
+        </Button>
       </div>
 
-      <Card className="min-h-[320px] space-y-3">
-        {messages.length === 0 && (
-          <p className="text-sm text-stone-500">
-            Try: &quot;I&apos;m anxious.&quot; / &quot;I procrastinated.&quot; / &quot;I want to quit.&quot;
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-xl border border-stone-200 bg-white/70 p-4 shadow-sm">
+        {hydrating && (
+          <p className="py-6 text-center text-sm text-stone-500">
+            Loading conversation…
           </p>
         )}
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={
-              m.role === "user"
-                ? "ml-8 rounded-md bg-teal-50 px-3 py-2 text-sm"
-                : "mr-8 rounded-md bg-stone-50 px-3 py-2 text-sm whitespace-pre-wrap"
-            }
-          >
-            {m.content}
+
+        {!hydrating && messages.length === 0 && !loading && (
+          <div className="space-y-2 py-6 text-center">
+            <p className="text-sm text-stone-500">Try one of these:</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {["I'm anxious.", "I procrastinated.", "I want to quit."].map(
+                (s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-sm text-stone-700 hover:border-teal-700/40 hover:text-teal-900"
+                    onClick={() => setInput(s)}
+                  >
+                    {s}
+                  </button>
+                ),
+              )}
+            </div>
           </div>
-        ))}
-      </Card>
+        )}
+
+        {messages.map((m, i) =>
+          m.role === "user" ? (
+            <div key={i} className="flex justify-end">
+              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-teal-800 px-4 py-2.5 text-[15px] leading-relaxed text-white">
+                {m.content}
+              </div>
+            </div>
+          ) : (
+            <div key={i} className="flex justify-start">
+              <div className="max-w-[92%] rounded-2xl rounded-bl-md border border-stone-200 bg-[#fafaf8] px-4 py-3 shadow-sm">
+                <CoachMarkdown content={m.content} />
+              </div>
+            </div>
+          ),
+        )}
+
+        {loading && (
+          <div className="flex justify-start">
+            <div className="rounded-2xl border border-stone-200 bg-[#fafaf8] px-4 py-3 text-sm text-stone-500">
+              Thinking…
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
 
       {error && <p className="text-sm text-red-700">{error}</p>}
 
-      <Textarea
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="What's going on?"
-        rows={3}
-      />
-      <Button onClick={send} disabled={loading}>
-        {loading ? "Thinking…" : "Send"}
-      </Button>
+      <div className="shrink-0 space-y-2">
+        <Textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="What's going on?"
+          rows={3}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              void send();
+            }
+          }}
+        />
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs text-stone-400">
+            Enter to send · Shift+Enter for new line
+          </p>
+          <Button onClick={send} disabled={loading || !input.trim()}>
+            {loading ? "Thinking…" : "Send"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

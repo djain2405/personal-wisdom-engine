@@ -1,8 +1,52 @@
 import { NextResponse } from "next/server";
 import { getAppUser } from "@/lib/auth";
 import { getAiProvider } from "@/lib/ai/provider";
-import { coachSystemPrompt } from "@/lib/ai/prompts";
+import { chatCoachPrompt } from "@/lib/ai/prompts";
 import { buildCoachContext } from "@/lib/coach/retrieval";
+
+/** Load latest chat conversation + messages, or a specific conversationId. */
+export async function GET(request: Request) {
+  const { supabase, user } = await getAppUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const conversationId = searchParams.get("conversationId");
+
+  let convId = conversationId;
+
+  if (!convId) {
+    const { data: latest } = await supabase
+      .from("conversations")
+      .select("id, title, updated_at")
+      .eq("user_id", user.id)
+      .eq("kind", "chat")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    convId = (latest as { id: string } | null)?.id ?? null;
+  }
+
+  if (!convId) {
+    return NextResponse.json({ conversationId: null, messages: [] });
+  }
+
+  const { data: messages } = await supabase
+    .from("messages")
+    .select("id, role, content, created_at")
+    .eq("user_id", user.id)
+    .eq("conversation_id", convId)
+    .order("created_at", { ascending: true });
+
+  return NextResponse.json({
+    conversationId: convId,
+    messages: (messages ?? []).map((m) => ({
+      role: (m as { role: string }).role,
+      content: (m as { content: string }).content,
+    })),
+  });
+}
 
 export async function POST(request: Request) {
   const { supabase, user } = await getAppUser();
@@ -36,29 +80,23 @@ export async function POST(request: Request) {
       role: "user",
       content: message,
     });
+    await supabase
+      .from("conversations")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", convId);
   }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("ai_provider")
-    .eq("id", user.id)
-    .maybeSingle();
 
   const context = await buildCoachContext(user.id, message);
 
   try {
-    const provider = getAiProvider(
-      (profile as { ai_provider?: string } | null)?.ai_provider,
-    );
+    const provider = getAiProvider();
     const content = await provider.generate({
-      system: `${coachSystemPrompt()}
+      system: `${chatCoachPrompt()}
 
-Respond as Chat Coach. Ground advice in the principles below. Cite principle titles. End with one action and one question.
-
-Context:
+User principles & memory (JSON):
 ${JSON.stringify(context)}`,
       prompt: message,
-      maxTokens: 2200,
+      maxTokens: 700,
     });
 
     if (convId) {
@@ -68,6 +106,10 @@ ${JSON.stringify(context)}`,
         role: "assistant",
         content,
       });
+      await supabase
+        .from("conversations")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", convId);
     }
 
     return NextResponse.json({ content, conversationId: convId });
