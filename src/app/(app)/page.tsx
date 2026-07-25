@@ -4,6 +4,9 @@ import { getOrCreateDailyBrief } from "@/lib/coach/daily-brief";
 import { CoachHomeClient } from "@/components/coach-home-client";
 import { EmptyState } from "@/components/empty-state";
 import type { DailyBrief } from "@/lib/types";
+import { todayISO } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   if (!isSupabaseConfigured()) {
@@ -31,7 +34,7 @@ export default async function HomePage() {
       .from("daily_briefs")
       .select("*")
       .eq("user_id", user.id)
-      .eq("brief_date", new Date().toISOString().slice(0, 10))
+      .eq("brief_date", todayISO())
       .maybeSingle();
 
     if (existing) {

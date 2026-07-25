@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import type { DailyBrief } from "@/lib/types";
+import { todayISO } from "@/lib/utils";
 
 export function CoachHomeClient({
   initialBrief,
@@ -16,6 +17,41 @@ export function CoachHomeClient({
   const [brief, setBrief] = useState(initialBrief);
   const [error, setError] = useState(initialError ?? null);
   const [loading, setLoading] = useState(false);
+
+  // Soft navigations / RSC refresh must replace client state with new server props.
+  useEffect(() => {
+    setBrief(initialBrief);
+    setError(initialError ?? null);
+  }, [initialBrief, initialError]);
+
+  // If the tab sat overnight (or server sent a stale brief), load today's.
+  useEffect(() => {
+    const today = todayISO();
+    if (initialBrief?.brief_date === today) return;
+
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/coach/brief");
+        const data = await res.json();
+        if (cancelled) return;
+        if (!res.ok) throw new Error(data.error || "Failed to load today's brief");
+        setBrief(data.brief);
+        setError(null);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load today's brief");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialBrief?.brief_date]);
 
   async function regenerate() {
     setLoading(true);
@@ -50,7 +86,9 @@ export function CoachHomeClient({
         <Card className="animate-rise-delay-2">
           <p className="text-sm text-stone-600">
             {error ||
-              "No brief yet. Configure AI keys and generate today's coach brief."}
+              (loading
+                ? "Loading today's coach brief…"
+                : "No brief yet. Configure AI keys and generate today's coach brief.")}
           </p>
           <Button className="mt-4 w-full sm:w-auto" onClick={regenerate} disabled={loading}>
             {loading ? "Generating…" : "Generate today's brief"}
@@ -72,6 +110,8 @@ export function CoachHomeClient({
     { label: "Mantra", value: brief.mantra },
   ];
 
+  const isToday = brief.brief_date === todayISO();
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
@@ -80,7 +120,9 @@ export function CoachHomeClient({
             Coach Mode
           </h1>
           <p className="mt-1 text-sm text-stone-600 animate-rise-delay-1 md:text-base">
-            {brief.brief_date} — shape the day around who you&apos;re becoming.
+            {brief.brief_date}
+            {!isToday ? " (refreshing to today…)" : ""} — shape the day around
+            who you&apos;re becoming.
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 animate-rise-delay-2 sm:w-auto sm:flex-row">
