@@ -120,24 +120,26 @@ export async function getKnowledgeInventory(userId: string) {
     ((docs ?? []) as { path: string }[]).map((d) => [d.path, d]),
   );
 
+  type DocRow = {
+    id: string;
+    title: string;
+    path: string;
+    status: string;
+    error_message: string | null;
+    source_type: string;
+    processed_at: string | null;
+    updated_at: string;
+  };
+
+  const diskSet = new Set(diskPaths);
   const rows = diskPaths.map((diskPath) => {
-    const doc = byPath.get(diskPath) as
-      | {
-          id: string;
-          title: string;
-          path: string;
-          status: string;
-          error_message: string | null;
-          source_type: string;
-          processed_at: string | null;
-          updated_at: string;
-        }
-      | undefined;
+    const doc = byPath.get(diskPath) as DocRow | undefined;
     return {
       path: diskPath,
       title: doc?.title ?? titleFromFilename(diskPath),
       source_type: doc?.source_type ?? sourceTypeFromPath(path.join(KNOWLEDGE_ROOT, diskPath)),
       inDatabase: Boolean(doc),
+      onDisk: true,
       id: doc?.id ?? null,
       status: doc?.status ?? "not_in_database",
       error_message: doc?.error_message ?? null,
@@ -145,18 +147,32 @@ export async function getKnowledgeInventory(userId: string) {
     };
   });
 
-  const dbOnly = ((docs ?? []) as { path: string }[]).filter(
-    (d) => !diskPaths.includes(d.path),
+  const dbOnly = ((docs ?? []) as DocRow[])
+    .filter((d) => !diskSet.has(d.path))
+    .map((d) => ({
+      path: d.path,
+      title: d.title,
+      source_type: d.source_type,
+      inDatabase: true,
+      onDisk: false,
+      id: d.id,
+      status: d.status,
+      error_message: d.error_message,
+      processed_at: d.processed_at,
+    }));
+
+  const allRows = [...rows, ...dbOnly].sort((a, b) =>
+    a.path.localeCompare(b.path),
   );
 
-  const missing = rows.filter((r) => !r.inDatabase || r.status !== "ready");
+  const missing = allRows.filter((r) => !r.inDatabase || r.status !== "ready");
 
   return {
     diskCount: diskPaths.length,
     dbCount: (docs ?? []).length,
-    readyCount: rows.filter((r) => r.status === "ready").length,
+    readyCount: allRows.filter((r) => r.status === "ready").length,
     missingCount: missing.length,
-    rows,
+    rows: allRows,
     dbOnly,
   };
 }
@@ -178,9 +194,7 @@ function titleFromFilename(filePath: string) {
     .trim();
 }
 
-async function readPdfText(filePath: string): Promise<string> {
-  const buf = await fs.readFile(filePath);
-
+async function readPdfTextFromBuffer(buf: Buffer): Promise<string> {
   // unpdf is reliable on Vercel/serverless (pdf-parse often fails there)
   try {
     const { extractText, getDocumentProxy } = await import("unpdf");
@@ -220,28 +234,111 @@ async function readPdfText(filePath: string): Promise<string> {
   throw new Error("No extractable text in PDF (may be scanned/image-only)");
 }
 
-async function readDocumentContent(filePath: string): Promise<{
-  title: string;
-  content: string;
-}> {
-  const ext = path.extname(filePath).toLowerCase();
-
+async function contentFromBuffer(
+  filename: string,
+  buf: Buffer,
+): Promise<{ title: string; content: string }> {
+  const ext = path.extname(filename).toLowerCase();
   if (ext === ".pdf") {
-    const content = await readPdfText(filePath);
-    return { title: titleFromFilename(filePath), content };
+    const content = await readPdfTextFromBuffer(buf);
+    return { title: titleFromFilename(filename), content };
   }
 
-  const raw = await fs.readFile(filePath, "utf8");
+  const raw = buf.toString("utf8");
   if (ext === ".md" || ext === ".markdown") {
     const { data: front, content } = matter(raw);
     const title =
       (typeof front.title === "string" && front.title) ||
-      titleFromFilename(filePath);
+      titleFromFilename(filename);
     return { title, content };
   }
 
-  // .txt and anything else we treat as plain text
-  return { title: titleFromFilename(filePath), content: raw };
+  return { title: titleFromFilename(filename), content: raw };
+}
+
+async function readDocumentContent(filePath: string): Promise<{
+  title: string;
+  content: string;
+}> {
+  const buf = await fs.readFile(filePath);
+  return contentFromBuffer(path.basename(filePath), buf);
+}
+
+function sanitizeUploadFilename(name: string): string {
+  const base = path.basename(name).replace(/[^\w.\- ()[\]]+/g, "_").trim();
+  if (!base || base === "." || base === "..") {
+    throw new Error("Invalid filename");
+  }
+  const ext = path.extname(base).toLowerCase();
+  if (!SUPPORTED_EXTENSIONS.has(ext)) {
+    throw new Error(`Unsupported file type: ${ext || "(none)"}`);
+  }
+  return base;
+}
+
+/** Save upload under knowledge/ when the filesystem allows (local); always ingest to DB. */
+export async function ingestUploadedFile(
+  userId: string,
+  filename: string,
+  data: Buffer,
+  options?: { folder?: string },
+) {
+  const safeName = sanitizeUploadFilename(filename);
+  const folder = (options?.folder ?? "").replace(/^\/+|\/+$/g, "");
+  if (folder && (folder.includes("..") || path.isAbsolute(folder))) {
+    throw new Error("Invalid folder");
+  }
+  if (folder && !SOURCE_TYPES.includes(folder as SourceType) && folder !== "inbox") {
+    throw new Error(`Unknown folder: ${folder}`);
+  }
+
+  const rel = folder ? `${folder}/${safeName}` : safeName;
+  const absolute = path.join(KNOWLEDGE_ROOT, rel);
+
+  let savedToDisk = false;
+  try {
+    await fs.mkdir(path.dirname(absolute), { recursive: true });
+    await fs.writeFile(absolute, data);
+    savedToDisk = true;
+  } catch {
+    // Vercel/serverless is often read-only — DB ingest still works.
+    savedToDisk = false;
+  }
+
+  const { title, content } = await contentFromBuffer(safeName, data);
+  const source_type = sourceTypeFromPath(path.join(KNOWLEDGE_ROOT, rel));
+  const supabase = await createClient();
+
+  const { data: row, error } = await supabase
+    .from("documents")
+    .upsert(
+      {
+        user_id: userId,
+        source_type,
+        title,
+        path: rel,
+        raw_text: content,
+        status: "pending",
+        error_message: null,
+        processed_at: null,
+      },
+      { onConflict: "user_id,path" },
+    )
+    .select("id, status, path, title")
+    .single();
+
+  if (error || !row) {
+    throw new Error(error?.message ?? "Failed to save document");
+  }
+
+  return {
+    id: (row as { id: string }).id,
+    path: (row as { path: string }).path,
+    title: (row as { title: string }).title,
+    status: (row as { status: string }).status,
+    savedToDisk,
+    action: "new" as const,
+  };
 }
 
 export async function syncKnowledgeFiles(userId: string) {

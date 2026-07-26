@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ type InventoryRow = {
   title: string;
   source_type: string;
   inDatabase: boolean;
+  onDisk?: boolean;
   id: string | null;
   status: string;
   error_message: string | null;
@@ -26,9 +27,13 @@ type Inventory = {
   rows: InventoryRow[];
 };
 
+const ACCEPT = ".md,.markdown,.txt,.pdf";
+
 export function KnowledgeClient({ documents }: { documents: Document[] }) {
   const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const [log, setLog] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<
@@ -95,6 +100,77 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
     }
   }
 
+  const uploadFiles = useCallback(
+    async (fileList: FileList | File[]) => {
+      const files = Array.from(fileList);
+      if (files.length === 0) return;
+
+      setLoading(true);
+      setError(null);
+      setDetails(null);
+      try {
+        const form = new FormData();
+        for (const f of files) form.append("files", f);
+        form.set("process", "1");
+
+        const res = await fetch("/api/knowledge/upload", {
+          method: "POST",
+          body: form,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Upload failed");
+
+        const uploaded = (data.uploaded ?? []) as {
+          path: string;
+          savedToDisk: boolean;
+          status: string;
+        }[];
+        const uploadErrors = (data.errors ?? []) as {
+          name: string;
+          error: string;
+        }[];
+        const finished = data.processedOk ?? 0;
+        const failed = data.processedFail ?? 0;
+
+        const parts = [
+          `Uploaded ${uploaded.length}`,
+          `AI finished ${finished}` + (failed ? ` (${failed} failed)` : ""),
+        ];
+        if (uploadErrors.length) {
+          parts.push(`${uploadErrors.length} upload error(s)`);
+        }
+        const diskSaved = uploaded.filter((u) => u.savedToDisk).length;
+        if (diskSaved < uploaded.length) {
+          parts.push(
+            `${uploaded.length - diskSaved} DB-only (server disk read-only)`,
+          );
+        }
+        setLog(parts.join(" · "));
+        setDetails(
+          uploaded.map((u) => ({
+            path: u.path,
+            action: u.savedToDisk ? "saved+queued" : "db-queued",
+            status: u.status,
+          })),
+        );
+        if (uploadErrors.length) {
+          setError(
+            uploadErrors.map((e) => `${e.name}: ${e.error}`).join(" · "),
+          );
+        }
+        if (data.inventory) setInventory(data.inventory);
+        else await loadInventory();
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Upload failed");
+      } finally {
+        setLoading(false);
+        if (inputRef.current) inputRef.current.value = "";
+      }
+    },
+    [router],
+  );
+
   const rows =
     inventory?.rows ??
     documents.map((d) => ({
@@ -102,6 +178,7 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
       title: d.title,
       source_type: d.source_type,
       inDatabase: true,
+      onDisk: true,
       id: d.id,
       status: d.status,
       error_message: d.error_message,
@@ -118,8 +195,8 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
             Knowledge
           </h1>
           <p className="mt-1 text-sm text-stone-600 md:text-base">
-            Every file under <code className="text-xs">knowledge/</code> should
-            appear below. On Vercel, push new files to GitHub before syncing.
+            Drop files below to add them and run AI sync. PDF, Markdown, and
+            text supported.
           </p>
         </div>
         <Button
@@ -127,8 +204,67 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
           onClick={sync}
           disabled={loading}
         >
-          {loading ? "Syncing…" : "Sync knowledge"}
+          {loading ? "Working…" : "Sync knowledge"}
         </Button>
+      </div>
+
+      <div
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            inputRef.current?.click();
+          }
+        }}
+        onClick={() => inputRef.current?.click()}
+        onDragEnter={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+          setDragOver(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          void uploadFiles(e.dataTransfer.files);
+        }}
+        className={cn(
+          "cursor-pointer rounded-xl border-2 border-dashed px-4 py-10 text-center transition-colors",
+          dragOver
+            ? "border-teal-700 bg-teal-50/80"
+            : "border-stone-300 bg-white/60 hover:border-teal-600/60 hover:bg-teal-50/40",
+          loading && "pointer-events-none opacity-60",
+        )}
+      >
+        <p className="text-sm font-medium text-stone-800">
+          {loading
+            ? "Uploading and syncing…"
+            : dragOver
+              ? "Drop to upload"
+              : "Drop files here, or click to choose"}
+        </p>
+        <p className="mt-1 text-xs text-stone-500">
+          Saves into <code className="text-[11px]">knowledge/</code> when
+          possible, then extracts principles automatically.
+        </p>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={ACCEPT}
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) void uploadFiles(e.target.files);
+          }}
+        />
       </div>
 
       {inventory && (
@@ -183,10 +319,7 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
         {rows.map((r) => (
           <Card
             key={r.path}
-            className={cn(
-              r.status !== "ready" && "border-amber-300",
-              /Transcript_0(9|10)/i.test(r.path) && "ring-1 ring-teal-700/30",
-            )}
+            className={cn(r.status !== "ready" && "border-amber-300")}
           >
             <CardTitle>{r.title}</CardTitle>
             <p className="mt-1 text-xs text-stone-500">
@@ -203,6 +336,7 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
                 {r.status}
               </span>
               {!r.inDatabase ? " · missing from database" : ""}
+              {r.onDisk === false ? " · uploaded (not on deploy disk)" : ""}
             </p>
             {r.error_message && (
               <p className="mt-1 text-xs text-red-600">{r.error_message}</p>
@@ -211,7 +345,7 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
         ))}
         {rows.length === 0 && (
           <p className="text-sm text-stone-500">
-            No files found under knowledge/.
+            No files yet — drop a PDF or Markdown above.
           </p>
         )}
       </div>
