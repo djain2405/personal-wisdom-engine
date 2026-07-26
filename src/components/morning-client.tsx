@@ -112,7 +112,14 @@ export function MorningClient({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not save");
-      setMessage("Morning ritual saved.");
+      if (data.brief) {
+        setMessage("Morning ritual saved. Coach Mode brief updated.");
+      } else if (data.briefError) {
+        setMessage("Morning ritual saved.");
+        setError(`Coach brief refresh failed: ${data.briefError}`);
+      } else {
+        setMessage("Morning ritual saved.");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save");
     } finally {
@@ -279,7 +286,11 @@ export function MorningClient({
           onClick={saveCheckin}
           disabled={saving}
         >
-          {saving ? "Saving…" : initialCheckin ? "Update ritual" : "Save ritual"}
+          {saving
+            ? "Saving & refreshing Coach…"
+            : initialCheckin
+              ? "Update ritual"
+              : "Save ritual"}
         </Button>
         {message && <p className="text-sm text-teal-800">{message}</p>}
         {error && <p className="text-sm text-red-700">{error}</p>}

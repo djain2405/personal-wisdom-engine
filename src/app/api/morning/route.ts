@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAppUser } from "@/lib/auth";
+import { getOrCreateDailyBrief } from "@/lib/coach/daily-brief";
 import { getTodayCheckin } from "@/lib/coach/morning";
 import { todayISO } from "@/lib/utils";
+
+export const maxDuration = 120;
 
 const CheckinSchema = z.object({
   intention: z.string().trim().max(4000).nullable().optional(),
@@ -69,5 +72,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ checkin: data });
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("ai_provider")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  let brief = null;
+  let briefError: string | null = null;
+  try {
+    brief = await getOrCreateDailyBrief(user.id, {
+      regenerate: true,
+      provider: (profile as { ai_provider?: string } | null)?.ai_provider,
+    });
+  } catch (e) {
+    // Ritual is saved; brief refresh is best-effort.
+    briefError = e instanceof Error ? e.message : "Could not refresh Coach brief";
+  }
+
+  return NextResponse.json({
+    checkin: data,
+    brief,
+    briefError,
+  });
 }
