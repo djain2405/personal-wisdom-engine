@@ -31,6 +31,20 @@ export async function getTopPrinciples(args: {
   return (data as Principle[]) ?? [];
 }
 
+export async function getRecentPrinciples(args: {
+  userId: string;
+  limit?: number;
+}) {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("principles")
+    .select("*")
+    .eq("user_id", args.userId)
+    .order("updated_at", { ascending: false })
+    .limit(args.limit ?? 5);
+  return (data as Principle[]) ?? [];
+}
+
 export async function retrievePrinciples(args: {
   userId: string;
   query: string;
@@ -86,12 +100,63 @@ export async function retrievePrinciples(args: {
   return ranked.slice(0, limit);
 }
 
+/** Blend enduring + recently reinforced + query-relevant principles. */
+export async function getBlendedPrinciples(args: {
+  userId: string;
+  query?: string;
+  limit?: number;
+}): Promise<Principle[]> {
+  const limit = args.limit ?? 10;
+  const [top, recent, matched] = await Promise.all([
+    getTopPrinciples({ userId: args.userId, limit: 8 }),
+    getRecentPrinciples({ userId: args.userId, limit: 5 }),
+    args.query
+      ? retrievePrinciples({ userId: args.userId, query: args.query, limit: 6 })
+      : Promise.resolve([] as Principle[]),
+  ]);
+
+  const byId = new Map<string, Principle>();
+  // Recurring first, then query matches, then recent — recent fills gaps so new uploads surface.
+  for (const p of [...top, ...matched, ...recent]) {
+    if (!byId.has(p.id)) byId.set(p.id, p);
+  }
+  return [...byId.values()].slice(0, limit);
+}
+
+export async function getPrincipleSourceSummary(userId: string, principleIds: string[]) {
+  if (!principleIds.length) {
+    return { sourceCount: 0, recentDocumentPaths: [] as string[] };
+  }
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("principle_sources")
+    .select("document_id, documents(path)")
+    .eq("user_id", userId)
+    .in("principle_id", principleIds)
+    .limit(80);
+
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  for (const row of data ?? []) {
+    const path = (
+      row as { documents?: { path?: string } | { path?: string }[] | null }
+    ).documents;
+    const p = Array.isArray(path) ? path[0]?.path : path?.path;
+    if (p && !seen.has(p)) {
+      seen.add(p);
+      paths.push(p);
+    }
+  }
+  return {
+    sourceCount: (data ?? []).length,
+    recentDocumentPaths: paths.slice(0, 5),
+  };
+}
+
 export async function buildCoachContext(userId: string, query?: string) {
   const [memory, principles, habits, morning] = await Promise.all([
     getIdentityMemory(userId),
-    query
-      ? retrievePrinciples({ userId, query, limit: 8 })
-      : getTopPrinciples({ userId, limit: 10 }),
+    getBlendedPrinciples({ userId, query, limit: 10 }),
     (async () => {
       const supabase = await createClient();
       const { data } = await supabase
@@ -103,6 +168,11 @@ export async function buildCoachContext(userId: string, query?: string) {
     })(),
     getMorningContext(userId),
   ]);
+
+  const provenance = await getPrincipleSourceSummary(
+    userId,
+    principles.map((p) => p.id),
+  );
 
   return {
     memory: memory
@@ -127,6 +197,12 @@ export async function buildCoachContext(userId: string, query?: string) {
     })),
     habits,
     morning,
+    provenance: {
+      principleCount: principles.length,
+      sourceCount: provenance.sourceCount,
+      recentDocuments: provenance.recentDocumentPaths,
+      principleTitles: principles.slice(0, 6).map((p) => p.title),
+    },
   };
 }
 

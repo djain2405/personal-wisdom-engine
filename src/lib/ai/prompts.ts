@@ -36,5 +36,10 @@ Chat format rules (strict):
 
 export const EXTRACTION_SYSTEM = `You extract structured wisdom from personal knowledge documents.
 Return ONLY valid JSON matching the requested schema. No markdown fences.
-Synthesize principles (not summaries). Prefer actionable, recurring ideas.
-Categories must be one of: Identity, Mindset, Relationships, Health, Career, Productivity, Emotional Regulation, Manifestation, Confidence, Money, Purpose, Creativity, Habits, Discipline, Leadership, Communication, Spirituality, Learning, Decision Making.`;
+
+Rules:
+- Synthesize principles (not summaries or chapter outlines). Prefer actionable, recurring ideas.
+- For substantive transcripts/notes, extract 3–8 concrete principles. Never return an empty principles array when the text has usable ideas.
+- Prefer themes that reinforce identity, discipline, becoming, and lived practice over one-off anecdotes.
+- Prefer continuity: phrase principles so they can merge with an existing personal philosophy (same idea, clear title), not invent near-duplicate titles for the same concept.
+- Categories must be one of: Identity, Mindset, Relationships, Health, Career, Productivity, Emotional Regulation, Manifestation, Confidence, Money, Purpose, Creativity, Habits, Discipline, Leadership, Communication, Spirituality, Learning, Decision Making.`;

@@ -67,5 +67,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ processed });
   }
 
+  if (action === "reprocess_empty_sources") {
+    const { reprocessEmptySourceDocuments } = await import(
+      "@/lib/knowledge/pipeline"
+    );
+    const result = await reprocessEmptySourceDocuments(
+      user.id,
+      body.limit ?? 20,
+    );
+    const inventory = await getKnowledgeInventory(user.id);
+    return NextResponse.json({ ...result, inventory });
+  }
+
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
 }

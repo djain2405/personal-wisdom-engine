@@ -17,6 +17,8 @@ type InventoryRow = {
   status: string;
   error_message: string | null;
   processed_at: string | null;
+  principleCount?: number;
+  chunkCount?: number;
 };
 
 type Inventory = {
@@ -24,6 +26,7 @@ type Inventory = {
   dbCount: number;
   readyCount: number;
   missingCount: number;
+  emptySourceCount?: number;
   rows: InventoryRow[];
 };
 
@@ -81,6 +84,16 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
       const s = data.summary ?? {};
       const queued = (s.new ?? 0) + (s.updated ?? 0) + (s.requeued ?? 0);
       const processedCount = data.processed?.length ?? 0;
+      const processed = (data.processed ?? []) as {
+        id?: string;
+        ok?: boolean;
+        principles?: number;
+        merged?: number;
+        error?: string;
+      }[];
+      const withPrinciples = processed.filter(
+        (p) => p.ok !== false && (p.principles ?? 0) > 0,
+      );
       const parts = [
         `Found ${s.total ?? data.synced?.length ?? 0} files on disk`,
         `${s.unchanged ?? 0} already processed`,
@@ -88,6 +101,11 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
         `AI finished ${processedCount}` +
           (data.processedFail ? ` (${data.processedFail} failed)` : ""),
       ];
+      if (withPrinciples.length) {
+        parts.push(
+          `${withPrinciples.reduce((n, p) => n + (p.principles ?? 0), 0)} principles extracted`,
+        );
+      }
       if (s.error) {
         parts.push(`${s.error} failed to read`);
       }
@@ -182,6 +200,53 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
     [router],
   );
 
+  async function reprocessEmpty() {
+    setLoading(true);
+    setError(null);
+    setDetails(null);
+    try {
+      const res = await fetch("/api/knowledge/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reprocess_empty_sources", limit: 20 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Reprocess failed");
+      const queued = (data.queued ?? []) as { path: string }[];
+      const processed = (data.processed ?? []) as {
+        ok?: boolean;
+        principles?: number;
+        error?: string;
+      }[];
+      const ok = processed.filter((p) => p.ok !== false);
+      const fail = processed.length - ok.length;
+      setLog(
+        [
+          `Requeued ${queued.length} empty-source files`,
+          `AI finished ${ok.length}` + (fail ? ` (${fail} failed)` : ""),
+          `${ok.reduce((n, p) => n + (p.principles ?? 0), 0)} principles extracted`,
+        ].join(" · "),
+      );
+      setDetails(
+        queued.map((q, i) => ({
+          path: q.path,
+          action: "reprocess",
+          status:
+            processed[i]?.ok === false
+              ? `error:${processed[i]?.error ?? "failed"}`
+              : `principles:${processed[i]?.principles ?? 0}`,
+        })),
+      );
+      if (data.inventory) setInventory(data.inventory);
+      else await loadInventory();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Reprocess failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const rows =
     inventory?.rows ??
     documents.map((d) => ({
@@ -194,9 +259,14 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
       status: d.status,
       error_message: d.error_message,
       processed_at: d.processed_at,
+      principleCount: 0,
+      chunkCount: 0,
     }));
 
   const notReady = rows.filter((r) => r.status !== "ready");
+  const emptySources = rows.filter(
+    (r) => r.status === "ready" && (r.principleCount ?? 0) === 0,
+  );
 
   return (
     <div className="space-y-4">
@@ -210,13 +280,25 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
             text supported.
           </p>
         </div>
-        <Button
-          className="w-full shrink-0 sm:w-auto"
-          onClick={sync}
-          disabled={loading}
-        >
-          {loading ? "Working…" : "Sync knowledge"}
-        </Button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          {(inventory?.emptySourceCount ?? 0) > 0 && (
+            <Button
+              variant="secondary"
+              className="w-full sm:w-auto"
+              onClick={reprocessEmpty}
+              disabled={loading}
+            >
+              Reprocess empty ({inventory?.emptySourceCount})
+            </Button>
+          )}
+          <Button
+            className="w-full shrink-0 sm:w-auto"
+            onClick={sync}
+            disabled={loading}
+          >
+            {loading ? "Working…" : "Sync knowledge"}
+          </Button>
+        </div>
       </div>
 
       <div
@@ -285,11 +367,33 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
           {inventory.missingCount > 0
             ? ` · Needs attention: ${inventory.missingCount}`
             : ""}
+          {(inventory.emptySourceCount ?? 0) > 0
+            ? ` · Ready but no principles: ${inventory.emptySourceCount}`
+            : ""}
         </p>
       )}
 
       {log && <p className="text-sm text-teal-800">{log}</p>}
       {error && <p className="text-sm text-red-700">{error}</p>}
+
+      {emptySources.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardTitle className="text-amber-950">
+            Ready but not feeding Coach ({emptySources.length})
+          </CardTitle>
+          <ul className="mt-2 space-y-1 text-sm text-amber-950">
+            {emptySources.map((r) => (
+              <li key={r.path}>
+                <span className="font-medium">{r.path}</span> — 0 principles
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-amber-900">
+            Use Reprocess empty so these files extract principles into your
+            wisdom graph.
+          </p>
+        </Card>
+      )}
 
       {notReady.length > 0 && (
         <Card className="border-amber-300 bg-amber-50">
@@ -346,6 +450,12 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
               >
                 {r.status}
               </span>
+              {typeof r.principleCount === "number"
+                ? ` · ${r.principleCount} principles`
+                : ""}
+              {typeof r.chunkCount === "number"
+                ? ` · ${r.chunkCount} chunks`
+                : ""}
               {!r.inDatabase ? " · missing from database" : ""}
               {r.onDisk === false ? " · uploaded (not on deploy disk)" : ""}
             </p>

@@ -165,15 +165,82 @@ export async function getKnowledgeInventory(userId: string) {
     a.path.localeCompare(b.path),
   );
 
-  const missing = allRows.filter((r) => !r.inDatabase || r.status !== "ready");
+  const docIds = allRows.map((r) => r.id).filter(Boolean) as string[];
+  const principleCountByDoc = new Map<string, number>();
+  const chunkCountByDoc = new Map<string, number>();
+
+  if (docIds.length) {
+    const [{ data: sources }, { data: chunks }] = await Promise.all([
+      supabase
+        .from("principle_sources")
+        .select("document_id")
+        .eq("user_id", userId)
+        .in("document_id", docIds),
+      supabase
+        .from("document_chunks")
+        .select("document_id")
+        .eq("user_id", userId)
+        .in("document_id", docIds),
+    ]);
+    for (const row of sources ?? []) {
+      const id = (row as { document_id: string | null }).document_id;
+      if (!id) continue;
+      principleCountByDoc.set(id, (principleCountByDoc.get(id) ?? 0) + 1);
+    }
+    for (const row of chunks ?? []) {
+      const id = (row as { document_id: string }).document_id;
+      chunkCountByDoc.set(id, (chunkCountByDoc.get(id) ?? 0) + 1);
+    }
+  }
+
+  const enriched = allRows.map((r) => ({
+    ...r,
+    principleCount: r.id ? (principleCountByDoc.get(r.id) ?? 0) : 0,
+    chunkCount: r.id ? (chunkCountByDoc.get(r.id) ?? 0) : 0,
+  }));
+
+  const missing = enriched.filter((r) => !r.inDatabase || r.status !== "ready");
+  const emptySources = enriched.filter(
+    (r) => r.status === "ready" && r.principleCount === 0,
+  );
 
   return {
     diskCount: diskPaths.length,
     dbCount: (docs ?? []).length,
-    readyCount: allRows.filter((r) => r.status === "ready").length,
+    readyCount: enriched.filter((r) => r.status === "ready").length,
     missingCount: missing.length,
-    rows: allRows,
+    emptySourceCount: emptySources.length,
+    rows: enriched,
     dbOnly,
+  };
+}
+
+export async function reprocessEmptySourceDocuments(
+  userId: string,
+  limit = 20,
+) {
+  const inventory = await getKnowledgeInventory(userId);
+  const targets = inventory.rows
+    .filter((r) => r.status === "ready" && r.principleCount === 0 && r.id)
+    .slice(0, limit);
+
+  const supabase = await createClient();
+  for (const doc of targets) {
+    await supabase
+      .from("documents")
+      .update({
+        status: "pending",
+        error_message: null,
+        processed_at: null,
+      })
+      .eq("id", doc.id!)
+      .eq("user_id", userId);
+  }
+
+  const processed = await processPendingDocuments(userId, targets.length || 1);
+  return {
+    queued: targets.map((t) => ({ id: t.id, path: t.path })),
+    processed,
   };
 }
 
@@ -481,7 +548,7 @@ async function mergeOrCreatePrinciple(
   userId: string,
   documentId: string,
   principle: z.infer<typeof ExtractionSchema>["principles"][number],
-) {
+): Promise<{ id: string | null; merged: boolean }> {
   const supabase = await createClient();
   const similar = await findRelated({
     userId,
@@ -546,7 +613,7 @@ async function mergeOrCreatePrinciple(
         entityId: row.id,
         content: `${principle.title}\n${principle.summary}\n${principle.explanation}`,
       });
-      return row.id;
+      return { id: row.id, merged: true };
     }
   }
 
@@ -567,7 +634,7 @@ async function mergeOrCreatePrinciple(
     .select("id")
     .single();
 
-  if (error || !created) return null;
+  if (error || !created) return { id: null, merged: false };
   const id = (created as { id: string }).id;
 
   await supabase.from("principle_sources").insert({
@@ -585,7 +652,7 @@ async function mergeOrCreatePrinciple(
     content: `${principle.title}\n${principle.summary}\n${principle.explanation}`,
   });
 
-  return id;
+  return { id, merged: false };
 }
 
 export async function processDocument(userId: string, documentId: string) {
@@ -660,10 +727,27 @@ ${text.slice(0, 14000)}`,
     });
 
     const parsed = extractJson<unknown>(raw);
-    const extraction = ExtractionSchema.parse(parsed ?? {});
+    if (!parsed) {
+      throw new Error("Extraction returned no usable JSON");
+    }
+    const extraction = ExtractionSchema.parse(parsed);
+    const mentalModels = (extraction.mental_models ?? []).filter((mm) =>
+      mm.trim(),
+    );
+    const principleCount =
+      extraction.principles.length + mentalModels.length;
 
+    // Substantive docs must yield principles — never fake "ready" with an empty brain.
+    if (text.trim().length >= 200 && principleCount === 0) {
+      throw new Error(
+        "Extraction produced no principles (reprocess or check document text)",
+      );
+    }
+
+    let merged = 0;
     for (const p of extraction.principles) {
-      await mergeOrCreatePrinciple(userId, documentId, p);
+      const result = await mergeOrCreatePrinciple(userId, documentId, p);
+      if (result.merged) merged += 1;
     }
 
     for (const h of extraction.habits) {
@@ -704,9 +788,8 @@ ${text.slice(0, 14000)}`,
     }
 
     // Promote mental models into principles lightly
-    for (const mm of extraction.mental_models ?? []) {
-      if (!mm.trim()) continue;
-      await mergeOrCreatePrinciple(userId, documentId, {
+    for (const mm of mentalModels) {
+      const result = await mergeOrCreatePrinciple(userId, documentId, {
         title: mm.slice(0, 120),
         summary: `Mental model: ${mm}`,
         explanation: mm,
@@ -715,6 +798,7 @@ ${text.slice(0, 14000)}`,
         action_steps: [],
         questions: [`How does "${mm}" apply today?`],
       });
+      if (result.merged) merged += 1;
     }
 
     await supabase
@@ -726,7 +810,14 @@ ${text.slice(0, 14000)}`,
       })
       .eq("id", documentId);
 
-    return { ok: true, principles: extraction.principles.length };
+    return {
+      ok: true,
+      principles: principleCount,
+      habits: extraction.habits.length,
+      quotes: extraction.quotes.length,
+      merged,
+      chunks: chunks.length,
+    };
   } catch (e) {
     await supabase
       .from("documents")

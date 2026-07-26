@@ -6,21 +6,41 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NAV = [
-  { href: "/", label: "Coach Mode" },
-  { href: "/morning", label: "Morning Ritual" },
-  { href: "/habits", label: "Habits" },
-  { href: "/chat", label: "Chat Coach" },
-  { href: "/situation", label: "Situation Coach" },
-  { href: "/routine", label: "Daily Routine" },
-  { href: "/principles", label: "Principles" },
-  { href: "/search", label: "Search" },
-  { href: "/reviews/evening", label: "Evening Review" },
-  { href: "/reviews/weekly", label: "Weekly Review" },
-  { href: "/reviews/monthly", label: "Monthly Report" },
-  { href: "/knowledge", label: "Knowledge" },
-  { href: "/memory", label: "Life Blueprint" },
-  { href: "/settings", label: "Settings" },
+const NAV_GROUPS = [
+  {
+    label: "Today",
+    items: [
+      { href: "/", label: "Coach Mode" },
+      { href: "/morning", label: "Morning Ritual" },
+      { href: "/habits", label: "Habits" },
+      { href: "/reviews/evening", label: "Evening Review" },
+      { href: "/chat", label: "Chat Coach" },
+    ],
+  },
+  {
+    label: "Wisdom",
+    items: [
+      { href: "/knowledge", label: "Knowledge" },
+      { href: "/principles", label: "Principles" },
+      { href: "/memory", label: "Life Blueprint" },
+    ],
+  },
+  {
+    label: "Reflect",
+    items: [
+      { href: "/reviews/weekly", label: "Weekly Review" },
+      { href: "/reviews/monthly", label: "Monthly Report" },
+      { href: "/search", label: "Search" },
+    ],
+  },
+  {
+    label: "More",
+    items: [
+      { href: "/situation", label: "Situation Coach" },
+      { href: "/routine", label: "Daily Routine" },
+      { href: "/settings", label: "Settings" },
+    ],
+  },
 ] as const;
 
 function NavLinks({
@@ -31,30 +51,39 @@ function NavLinks({
   onNavigate?: () => void;
 }) {
   return (
-    <ul className="space-y-0.5">
-      {NAV.map((item) => {
-        const active =
-          item.href === "/"
-            ? pathname === "/"
-            : pathname.startsWith(item.href);
-        return (
-          <li key={item.href}>
-            <Link
-              href={item.href}
-              onClick={onNavigate}
-              className={cn(
-                "block min-h-11 rounded-md px-3 py-2.5 text-sm transition-colors md:min-h-0 md:py-2",
-                active
-                  ? "bg-teal-100 font-medium text-teal-950"
-                  : "text-stone-600 hover:bg-stone-100 hover:text-stone-900",
-              )}
-            >
-              {item.label}
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="space-y-4">
+      {NAV_GROUPS.map((group) => (
+        <div key={group.label}>
+          <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wide text-stone-400">
+            {group.label}
+          </p>
+          <ul className="space-y-0.5">
+            {group.items.map((item) => {
+              const active =
+                item.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(item.href);
+              return (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    className={cn(
+                      "block min-h-11 rounded-md px-3 py-2.5 text-sm transition-colors md:min-h-0 md:py-2",
+                      active
+                        ? "bg-teal-100 font-medium text-teal-950"
+                        : "text-stone-600 hover:bg-stone-100 hover:text-stone-900",
+                    )}
+                  >
+                    {item.label}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </div>
   );
 }
 

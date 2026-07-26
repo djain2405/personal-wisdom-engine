@@ -123,6 +123,26 @@ export function CoachHomeClient({
   ];
 
   const isToday = brief.brief_date === todayISO();
+  const provenance = (
+    brief.raw_json &&
+    typeof brief.raw_json === "object" &&
+    brief.raw_json !== null &&
+    "provenance" in brief.raw_json
+      ? (brief.raw_json as {
+          provenance?: {
+            principle_count?: number;
+            source_count?: number;
+            recent_documents?: string[];
+            source_principle_titles?: string[];
+          };
+        }).provenance
+      : null
+  );
+
+  const recentDocs = (provenance?.recent_documents ?? [])
+    .map((path) => path.split("/").pop() ?? path)
+    .slice(0, 3);
+  const titles = (provenance?.source_principle_titles ?? []).slice(0, 3);
 
   return (
     <div className="space-y-6">
@@ -136,6 +156,20 @@ export function CoachHomeClient({
             {!isToday ? " (refreshing to today…)" : ""} — shape the day around
             who you&apos;re becoming.
           </p>
+          {provenance && (
+            <p className="mt-2 text-xs text-stone-500">
+              Drawing from {provenance.principle_count ?? 0} principles
+              {provenance.source_count
+                ? ` across ${provenance.source_count} sources`
+                : ""}
+              {recentDocs.length
+                ? `. Recent: ${recentDocs.join(", ")}`
+                : titles.length
+                  ? `. Including: ${titles.join(", ")}`
+                  : ""}
+              .
+            </p>
+          )}
         </div>
         <div className="flex w-full flex-col gap-2 animate-rise-delay-2 sm:w-auto sm:flex-row">
           <Button

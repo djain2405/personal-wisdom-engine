@@ -57,6 +57,7 @@ Return ONLY JSON:
 }
 
 Use the user's dream identity and recurring principles. Prefer high frequency/confidence principles.
+When a principle was recently reinforced by a new transcript, you may note that continuity briefly.
 Honor today's morning intention, becoming identity, mood, energy, and habit state when present.
 
 Context JSON:
@@ -82,6 +83,14 @@ ${JSON.stringify(context)}`,
     mantra: "I become who I practice being.",
   };
 
+  const provenance = {
+    source_principle_ids: context.principles.map((p) => p.id),
+    source_principle_titles: context.principles.map((p) => p.title),
+    principle_count: context.provenance?.principleCount ?? context.principles.length,
+    source_count: context.provenance?.sourceCount ?? 0,
+    recent_documents: context.provenance?.recentDocuments ?? [],
+  };
+
   const row = {
     user_id: userId,
     brief_date: date,
@@ -95,7 +104,7 @@ ${JSON.stringify(context)}`,
     priorities: parsed.priorities,
     mindset_reminder: parsed.mindset_reminder,
     mantra: parsed.mantra,
-    raw_json: parsed,
+    raw_json: { ...parsed, provenance },
   };
 
   const { data, error } = await supabase
