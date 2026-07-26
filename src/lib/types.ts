@@ -201,6 +201,47 @@ export type Habit = {
   created_at: string;
 };
 
+export type MorningCheckin = {
+  id: string;
+  user_id: string;
+  checkin_date: string;
+  intention: string | null;
+  becoming_identity: string | null;
+  gratitude: string[];
+  reflection: string | null;
+  mood: number | null;
+  energy: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TrackedHabit = {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  sort_order: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HabitLog = {
+  id: string;
+  user_id: string;
+  tracked_habit_id: string;
+  log_date: string;
+  done: boolean;
+  created_at: string;
+};
+
+export type HabitWithProgress = TrackedHabit & {
+  completedToday: boolean;
+  currentStreak: number;
+  completionRate7d: number;
+  logs: Pick<HabitLog, "log_date" | "done">[];
+};
+
 export type Quote = {
   id: string;
   user_id: string;

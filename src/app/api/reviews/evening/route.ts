@@ -45,6 +45,7 @@ Return JSON:
 }
 
 Use principles from context when reinforcing identity.
+When a morning check-in exists, compare the user's stated intention and becoming identity with how the day unfolded. Reference habit follow-through without shaming.
 
 Context:
 ${JSON.stringify(context)}`,

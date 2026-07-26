@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Coach Mode" },
+  { href: "/morning", label: "Morning Ritual" },
+  { href: "/habits", label: "Habits" },
   { href: "/chat", label: "Chat Coach" },
   { href: "/situation", label: "Situation Coach" },
   { href: "/routine", label: "Daily Routine" },
@@ -74,10 +76,6 @@ function Brand({ compact = false }: { compact?: boolean }) {
 export function Sidebar({ userEmail }: { userEmail?: string | null }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     if (!open) return;

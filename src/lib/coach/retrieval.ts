@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { findRelated } from "@/lib/ai/embeddings";
+import { getMorningContext } from "@/lib/coach/morning";
 import type { IdentityMemory, Principle } from "@/lib/types";
 
 export async function getIdentityMemory(userId: string) {
@@ -86,7 +87,7 @@ export async function retrievePrinciples(args: {
 }
 
 export async function buildCoachContext(userId: string, query?: string) {
-  const [memory, principles, habits] = await Promise.all([
+  const [memory, principles, habits, morning] = await Promise.all([
     getIdentityMemory(userId),
     query
       ? retrievePrinciples({ userId, query, limit: 8 })
@@ -100,6 +101,7 @@ export async function buildCoachContext(userId: string, query?: string) {
         .limit(15);
       return data ?? [];
     })(),
+    getMorningContext(userId),
   ]);
 
   return {
@@ -124,6 +126,7 @@ export async function buildCoachContext(userId: string, query?: string) {
       frequency_score: p.frequency_score,
     })),
     habits,
+    morning,
   };
 }
 

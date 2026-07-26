@@ -56,6 +56,7 @@ Return JSON:
 
 Evening reviews: ${JSON.stringify(evenings ?? [])}
 Daily briefs: ${JSON.stringify(briefs ?? [])}
+Use the morning check-ins and habit consistency in Context to identify intention, mood, energy, and follow-through trends. Be specific and non-judgmental.
 Context: ${JSON.stringify(context)}`,
     });
 

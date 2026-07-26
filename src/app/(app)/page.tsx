@@ -17,18 +17,27 @@ export default async function HomePage() {
 
   let brief: DailyBrief | null = null;
   let error: string | null = null;
+  let morningCompleted = false;
+  const { supabase, user } = await getAppUser();
+
+  if (!user) {
+    return (
+      <EmptyState
+        message="Sign in to open Coach Mode, or set PERSONAL_MODE=true for no-login MVP."
+        actionHref="/login"
+        actionLabel="Sign in"
+      />
+    );
+  }
 
   try {
-    const { supabase, user } = await getAppUser();
-    if (!user) {
-      return (
-        <EmptyState
-          message="Sign in to open Coach Mode, or set PERSONAL_MODE=true for no-login MVP."
-          actionHref="/login"
-          actionLabel="Sign in"
-        />
-      );
-    }
+    const { data: morning } = await supabase
+      .from("morning_checkins")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("checkin_date", todayISO())
+      .maybeSingle();
+    morningCompleted = Boolean(morning);
 
     const { data: existing } = await supabase
       .from("daily_briefs")
@@ -53,5 +62,12 @@ export default async function HomePage() {
     error = e instanceof Error ? e.message : "Could not load Coach Mode";
   }
 
-  return <CoachHomeClient initialBrief={brief} initialError={error} />;
+  return (
+    <CoachHomeClient
+      key={brief?.brief_date ?? "no-brief"}
+      initialBrief={brief}
+      initialError={error}
+      morningCompleted={morningCompleted}
+    />
+  );
 }

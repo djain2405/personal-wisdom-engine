@@ -10,19 +10,15 @@ import { todayISO } from "@/lib/utils";
 export function CoachHomeClient({
   initialBrief,
   initialError,
+  morningCompleted,
 }: {
   initialBrief: DailyBrief | null;
   initialError?: string | null;
+  morningCompleted: boolean;
 }) {
   const [brief, setBrief] = useState(initialBrief);
   const [error, setError] = useState(initialError ?? null);
   const [loading, setLoading] = useState(false);
-
-  // Soft navigations / RSC refresh must replace client state with new server props.
-  useEffect(() => {
-    setBrief(initialBrief);
-    setError(initialError ?? null);
-  }, [initialBrief, initialError]);
 
   // If the tab sat overnight (or server sent a stale brief), load today's.
   useEffect(() => {
@@ -83,6 +79,22 @@ export function CoachHomeClient({
             Your daily operating system — identity first, then action.
           </p>
         </div>
+        {!morningCompleted && (
+          <Card className="border-teal-200 bg-teal-50/80">
+            <CardTitle className="text-teal-950">
+              Start with your own voice
+            </CardTitle>
+            <p className="mt-1 text-sm text-stone-600">
+              Record your intention, gratitude, mood, and habits for today.
+            </p>
+            <Link
+              href="/morning"
+              className="mt-3 inline-flex min-h-10 items-center rounded-md bg-teal-800 px-4 text-sm font-medium text-white hover:bg-teal-900"
+            >
+              Log morning ritual
+            </Link>
+          </Card>
+        )}
         <Card className="animate-rise-delay-2">
           <p className="text-sm text-stone-600">
             {error ||
@@ -145,6 +157,28 @@ export function CoachHomeClient({
 
       {error && (
         <p className="text-sm text-red-700">{error}</p>
+      )}
+
+      {!morningCompleted && (
+        <Card className="border-teal-200 bg-teal-50/80">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="text-teal-950">
+                Your morning ritual is waiting
+              </CardTitle>
+              <p className="mt-1 text-sm text-stone-600">
+                Set your intention, note gratitude, and check off today&apos;s
+                habits.
+              </p>
+            </div>
+            <Link
+              href="/morning"
+              className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-md bg-teal-800 px-4 text-sm font-medium text-white hover:bg-teal-900"
+            >
+              Log morning ritual
+            </Link>
+          </div>
+        </Card>
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">

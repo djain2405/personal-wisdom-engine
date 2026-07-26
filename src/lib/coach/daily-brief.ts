@@ -57,6 +57,7 @@ Return ONLY JSON:
 }
 
 Use the user's dream identity and recurring principles. Prefer high frequency/confidence principles.
+Honor today's morning intention, becoming identity, mood, energy, and habit state when present.
 
 Context JSON:
 ${JSON.stringify(context)}`,

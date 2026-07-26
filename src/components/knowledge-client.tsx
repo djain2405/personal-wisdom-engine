@@ -52,7 +52,18 @@ export function KnowledgeClient({ documents }: { documents: Document[] }) {
   }
 
   useEffect(() => {
-    void loadInventory();
+    let cancelled = false;
+    fetch("/api/knowledge/process")
+      .then(async (res) => ({ ok: res.ok, data: await res.json() }))
+      .then(({ ok, data }) => {
+        if (!cancelled && ok) setInventory(data);
+      })
+      .catch(() => {
+        // non-fatal
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function sync() {
