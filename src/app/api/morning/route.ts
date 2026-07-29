@@ -52,32 +52,47 @@ export async function POST(request: Request) {
   const gratitude = (parsed.data.gratitude ?? []).filter(Boolean);
   const { data: existingCheckin } = await supabase
     .from("morning_checkins")
-    .select("reflection_prompt")
+    .select("*")
     .eq("user_id", user.id)
     .eq("checkin_date", todayISO())
     .maybeSingle();
 
-  const { data, error } = await supabase
+  const baseRow = {
+    user_id: user.id,
+    checkin_date: todayISO(),
+    intention: parsed.data.intention || null,
+    becoming_identity: parsed.data.becomingIdentity || null,
+    gratitude,
+    reflection: parsed.data.reflection || null,
+    mood: parsed.data.mood ?? null,
+    energy: parsed.data.energy ?? null,
+  };
+
+  const existing = existingCheckin as Record<string, unknown> | null;
+  const rowWithPrompt = {
+    ...baseRow,
+    reflection_prompt:
+      existing && "reflection_prompt" in existing
+        ? ((existing.reflection_prompt as string | null) ?? null)
+        : null,
+  };
+
+  let { data, error } = await supabase
     .from("morning_checkins")
-    .upsert(
-      {
-        user_id: user.id,
-        checkin_date: todayISO(),
-        intention: parsed.data.intention || null,
-        becoming_identity: parsed.data.becomingIdentity || null,
-        gratitude,
-        reflection: parsed.data.reflection || null,
-        reflection_prompt:
-          (existingCheckin as { reflection_prompt?: string | null } | null)
-            ?.reflection_prompt ?? null,
-        mood: parsed.data.mood ?? null,
-        energy: parsed.data.energy ?? null,
-      },
-      { onConflict: "user_id,checkin_date" },
-    )
+    .upsert(rowWithPrompt, { onConflict: "user_id,checkin_date" })
     .select("*")
     .single();
 
+  if (
+    error &&
+    (error.code === "42703" || /reflection_prompt/i.test(error.message ?? ""))
+  ) {
+    ({ data, error } = await supabase
+      .from("morning_checkins")
+      .upsert(baseRow, { onConflict: "user_id,checkin_date" })
+      .select("*")
+      .single());
+  }
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

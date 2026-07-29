@@ -108,7 +108,16 @@ Return ONLY the prompt text.`,
     .select("*")
     .single();
 
-  if (error) throw error;
+  // Column may be missing until 003_morning_prompt.sql is applied.
+  if (error) {
+    const missingColumn =
+      error.code === "42703" ||
+      /reflection_prompt/i.test(error.message ?? "");
+    if (missingColumn) {
+      return { prompt, checkin: existingCheckin };
+    }
+    throw error;
+  }
   return {
     prompt,
     checkin: upserted as MorningCheckin,
