@@ -62,10 +62,12 @@ export function MorningClient({
   date,
   initialCheckin,
   initialHabits,
+  reflectionPrompt,
 }: {
   date: string;
   initialCheckin: MorningCheckin | null;
   initialHabits: HabitWithProgress[];
+  reflectionPrompt: string;
 }) {
   const [intention, setIntention] = useState(
     initialCheckin?.intention ?? "",
@@ -91,12 +93,17 @@ export function MorningClient({
   const [saving, setSaving] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [coachSummary, setCoachSummary] = useState<{
+    principle: string;
+    priorities: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function saveCheckin() {
     setSaving(true);
     setError(null);
     setMessage(null);
+    setCoachSummary(null);
     try {
       const res = await fetch("/api/morning", {
         method: "POST",
@@ -113,7 +120,15 @@ export function MorningClient({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Could not save");
       if (data.brief) {
+        const principle =
+          data.brief.principle_to_practice?.split(":")[0]?.trim() ||
+          data.brief.principle_to_practice ||
+          "updated";
         setMessage("Morning ritual saved. Coach Mode brief updated.");
+        setCoachSummary({
+          principle,
+          priorities: data.brief.priorities || "",
+        });
       } else if (data.briefError) {
         setMessage("Morning ritual saved.");
         setError(`Coach brief refresh failed: ${data.briefError}`);
@@ -271,13 +286,14 @@ export function MorningClient({
 
         <div>
           <Label htmlFor="reflection">Morning reflection</Label>
+          <p className="mt-1 text-sm text-teal-900">{reflectionPrompt}</p>
           <Textarea
             id="reflection"
             className="mt-2"
             rows={6}
             value={reflection}
             onChange={(event) => setReflection(event.target.value)}
-            placeholder="What's present for me? What am I learning or releasing?"
+            placeholder="Write your response…"
           />
         </div>
 
@@ -288,11 +304,32 @@ export function MorningClient({
         >
           {saving
             ? "Saving & refreshing Coach…"
-            : initialCheckin
+            : initialCheckin?.intention || initialCheckin?.reflection
               ? "Update ritual"
               : "Save ritual"}
         </Button>
         {message && <p className="text-sm text-teal-800">{message}</p>}
+        {coachSummary && (
+          <div className="rounded-lg border border-teal-200 bg-teal-50/80 p-3 text-sm text-stone-700">
+            <p>
+              <span className="font-medium text-teal-950">Principle:</span>{" "}
+              {coachSummary.principle}
+            </p>
+            {coachSummary.priorities && (
+              <p className="mt-2 whitespace-pre-wrap">
+                <span className="font-medium text-teal-950">Priorities:</span>
+                {"\n"}
+                {coachSummary.priorities}
+              </p>
+            )}
+            <Link
+              href="/"
+              className="mt-3 inline-flex text-sm font-medium text-teal-800 hover:text-teal-950"
+            >
+              Open Coach Mode
+            </Link>
+          </div>
+        )}
         {error && <p className="text-sm text-red-700">{error}</p>}
       </Card>
 

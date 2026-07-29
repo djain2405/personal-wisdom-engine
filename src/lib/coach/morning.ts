@@ -13,6 +13,8 @@ function shiftISODate(date: string, days: number) {
   return shifted.toISOString().slice(0, 10);
 }
 
+export { shiftISODate };
+
 export function recentDateRange(days: number, end = todayISO()) {
   return Array.from({ length: days }, (_, index) =>
     shiftISODate(end, index - days + 1),

@@ -1,8 +1,6 @@
 import { requireUser } from "@/lib/auth";
-import {
-  getHabitsWithStreaks,
-  getTodayCheckin,
-} from "@/lib/coach/morning";
+import { getHabitsWithStreaks } from "@/lib/coach/morning";
+import { getOrCreateMorningPrompt } from "@/lib/coach/morning-prompt";
 import { MorningClient } from "@/components/morning-client";
 import { todayISO } from "@/lib/utils";
 
@@ -10,8 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default async function MorningPage() {
   const { user } = await requireUser();
-  const [checkin, habits] = await Promise.all([
-    getTodayCheckin(user.id),
+  const [{ prompt, checkin }, habits] = await Promise.all([
+    getOrCreateMorningPrompt(user.id),
     getHabitsWithStreaks(user.id),
   ]);
 
@@ -20,6 +18,7 @@ export default async function MorningPage() {
       date={todayISO()}
       initialCheckin={checkin}
       initialHabits={habits}
+      reflectionPrompt={prompt}
     />
   );
 }

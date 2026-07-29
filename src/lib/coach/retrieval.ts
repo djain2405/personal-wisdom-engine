@@ -105,22 +105,55 @@ export async function getBlendedPrinciples(args: {
   userId: string;
   query?: string;
   limit?: number;
+  excludeIds?: string[];
+  variety?: boolean;
 }): Promise<Principle[]> {
   const limit = args.limit ?? 10;
+  const exclude = new Set((args.excludeIds ?? []).filter(Boolean));
   const [top, recent, matched] = await Promise.all([
-    getTopPrinciples({ userId: args.userId, limit: 8 }),
-    getRecentPrinciples({ userId: args.userId, limit: 5 }),
+    getTopPrinciples({ userId: args.userId, limit: 10 }),
+    getRecentPrinciples({ userId: args.userId, limit: 6 }),
     args.query
-      ? retrievePrinciples({ userId: args.userId, query: args.query, limit: 6 })
+      ? retrievePrinciples({ userId: args.userId, query: args.query, limit: 8 })
       : Promise.resolve([] as Principle[]),
   ]);
 
   const byId = new Map<string, Principle>();
-  // Recurring first, then query matches, then recent — recent fills gaps so new uploads surface.
   for (const p of [...top, ...matched, ...recent]) {
+    if (exclude.has(p.id)) continue;
     if (!byId.has(p.id)) byId.set(p.id, p);
   }
-  return [...byId.values()].slice(0, limit);
+
+  let pool = [...byId.values()];
+  // If exclusion emptied the pool, fall back to full set (better than no principles).
+  if (!pool.length) {
+    for (const p of [...top, ...matched, ...recent]) {
+      if (!byId.has(p.id)) byId.set(p.id, p);
+    }
+    pool = [...byId.values()];
+  }
+
+  if (args.variety && pool.length > 2) {
+    const byFreq = [...pool].sort(
+      (a, b) => b.frequency_score - a.frequency_score,
+    );
+    const high = byFreq.slice(0, Math.ceil(byFreq.length / 2));
+    const low = byFreq.slice(Math.ceil(byFreq.length / 2)).reverse();
+    const interleaved: Principle[] = [];
+    for (let i = 0; i < Math.max(high.length, low.length); i++) {
+      if (high[i]) interleaved.push(high[i]);
+      if (low[i]) interleaved.push(low[i]);
+    }
+    // Dedup while preserving interleave order
+    const seen = new Set<string>();
+    pool = interleaved.filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  }
+
+  return pool.slice(0, limit);
 }
 
 export async function getPrincipleSourceSummary(userId: string, principleIds: string[]) {
@@ -153,10 +186,20 @@ export async function getPrincipleSourceSummary(userId: string, principleIds: st
   };
 }
 
-export async function buildCoachContext(userId: string, query?: string) {
+export async function buildCoachContext(
+  userId: string,
+  query?: string,
+  options?: { excludePrincipleIds?: string[]; variety?: boolean; limit?: number },
+) {
   const [memory, principles, habits, morning] = await Promise.all([
     getIdentityMemory(userId),
-    getBlendedPrinciples({ userId, query, limit: 10 }),
+    getBlendedPrinciples({
+      userId,
+      query,
+      limit: options?.limit ?? 10,
+      excludeIds: options?.excludePrincipleIds,
+      variety: options?.variety ?? false,
+    }),
     (async () => {
       const supabase = await createClient();
       const { data } = await supabase

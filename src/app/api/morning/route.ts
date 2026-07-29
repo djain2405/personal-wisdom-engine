@@ -50,6 +50,13 @@ export async function POST(request: Request) {
   }
 
   const gratitude = (parsed.data.gratitude ?? []).filter(Boolean);
+  const { data: existingCheckin } = await supabase
+    .from("morning_checkins")
+    .select("reflection_prompt")
+    .eq("user_id", user.id)
+    .eq("checkin_date", todayISO())
+    .maybeSingle();
+
   const { data, error } = await supabase
     .from("morning_checkins")
     .upsert(
@@ -60,6 +67,9 @@ export async function POST(request: Request) {
         becoming_identity: parsed.data.becomingIdentity || null,
         gratitude,
         reflection: parsed.data.reflection || null,
+        reflection_prompt:
+          (existingCheckin as { reflection_prompt?: string | null } | null)
+            ?.reflection_prompt ?? null,
         mood: parsed.data.mood ?? null,
         energy: parsed.data.energy ?? null,
       },

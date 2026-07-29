@@ -209,6 +209,7 @@ export type MorningCheckin = {
   becoming_identity: string | null;
   gratitude: string[];
   reflection: string | null;
+  reflection_prompt: string | null;
   mood: number | null;
   energy: number | null;
   created_at: string;
