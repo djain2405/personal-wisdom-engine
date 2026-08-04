@@ -1,7 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { getAiProvider } from "@/lib/ai/provider";
 import { coachSystemPrompt } from "@/lib/ai/prompts";
-import { buildCoachContext } from "@/lib/coach/retrieval";
+import {
+  buildCoachContext,
+  getRecentPrincipleCooldown,
+  preferVariedPrinciple,
+} from "@/lib/coach/retrieval";
 import { getTodayCheckin, shiftISODate } from "@/lib/coach/morning";
 import { extractJson, todayISO } from "@/lib/utils";
 import type { DailyBrief } from "@/lib/types";
@@ -53,7 +57,7 @@ export async function getOrCreateDailyBrief(
     if (existing) return existing as DailyBrief;
   }
 
-  const [{ data: yesterdayBrief }, morning] = await Promise.all([
+  const [{ data: yesterdayBrief }, morning, cooldown] = await Promise.all([
     supabase
       .from("daily_briefs")
       .select("principle_id, principle_to_practice, priorities")
@@ -61,6 +65,7 @@ export async function getOrCreateDailyBrief(
       .eq("brief_date", yesterday)
       .maybeSingle(),
     getTodayCheckin(userId),
+    getRecentPrincipleCooldown(userId, 7),
   ]);
 
   const yesterdayPrincipleId =
@@ -71,13 +76,20 @@ export async function getOrCreateDailyBrief(
       ?.principle_to_practice ?? null;
 
   const query = buildDailyQuery(date, morning);
+  // Cooldown is applied inside buildCoachContext; also pass yesterday explicitly
   const context = await buildCoachContext(userId, query, {
     excludePrincipleIds: yesterdayPrincipleId ? [yesterdayPrincipleId] : [],
     variety: true,
     limit: 10,
+    applyCooldown: true,
+    includeExcerpts: true,
   });
 
-  const preferred = context.principles[0];
+  const preferred =
+    preferVariedPrinciple(context.principles) ??
+    context.principles.find((p) => p.id === context.preferredPrincipleId) ??
+    context.principles[0];
+
   const provider = getAiProvider(options?.provider);
   const raw = await provider.generate({
     system: coachSystemPrompt(),
@@ -100,11 +112,13 @@ Return ONLY JSON:
 
 Hard rules for variety and personalization:
 - This brief is for ${date}. Make principle_to_practice and priorities distinct for THIS day.
-- Do NOT reuse yesterday's principle when alternatives exist. Yesterday's principle was: "${yesterdayPrincipleTitle ?? "none"}"${yesterdayPrincipleId ? ` (id ${yesterdayPrincipleId})` : ""}.
-- Pick principle_id from the provided Context principles list. Prefer the first candidate when it fits today's morning, otherwise another from the list.
+- Do NOT reuse principles from the last 7 days when alternatives exist. Cooldown ids: ${JSON.stringify(cooldown.ids.slice(0, 20))}.
+- Yesterday's principle was: "${yesterdayPrincipleTitle ?? "none"}"${yesterdayPrincipleId ? ` (id ${yesterdayPrincipleId})` : ""}.
+- Pick principle_id from the provided Context principles list.
+- Prefer underused / query-matched principles and freshly ingested knowledge excerpts over high-frequency favorites.
 - Suggested principle for today: "${preferred?.title ?? "none"}" (id ${preferred?.id ?? "null"}).
-- Priorities must be concrete actions for today, grounded in morning intention/becoming identity AND the chosen principle — never generic filler like "Protect deep work" unless that truly matches today's intention.
-- Honor today's morning intention, becoming identity, gratitude, mood, and energy when present.
+- Ground priorities in morning intention + chosen principle + knowledge_excerpts when present.
+- Priorities must be concrete actions for today — never generic filler like "Protect deep work" unless that truly matches today's intention.
 - Prefer the user's own knowledge principles over stock advice.
 
 Context JSON:
@@ -121,10 +135,9 @@ ${JSON.stringify(context)}`,
       keystone_habit:
         (context.habits[0] as { title?: string } | undefined)?.title ||
         "One focused block on what matters most",
-      principle_to_practice:
-        preferred
-          ? `${preferred.title}: ${preferred.summary ?? "Practice this today."}`
-          : "Act from identity, not mood",
+      principle_to_practice: preferred
+        ? `${preferred.title}: ${preferred.summary ?? "Practice this today."}`
+        : "Act from identity, not mood",
       principle_id: preferred?.id ?? null,
       challenge: "Do the hard thing first for 25 minutes",
       reflection_question: "Where did I practice my chosen identity today?",
@@ -143,15 +156,20 @@ ${JSON.stringify(context)}`,
     };
   }
 
-  // Enforce rotation if the model ignored the constraint.
   const candidateIds = new Set(context.principles.map((p) => p.id));
+  const cooldownSet = new Set(cooldown.ids);
   let principleId = parsed.principle_id || preferred?.id || null;
-  if (
-    yesterdayPrincipleId &&
-    principleId === yesterdayPrincipleId &&
-    preferred?.id &&
-    preferred.id !== yesterdayPrincipleId
-  ) {
+
+  // Enforce: not yesterday, not in 7-day cooldown when alternatives exist
+  const isBlocked = (id: string | null | undefined) =>
+    Boolean(
+      id &&
+        (id === yesterdayPrincipleId || cooldownSet.has(id)) &&
+        preferred?.id &&
+        preferred.id !== id,
+    );
+
+  if (isBlocked(principleId) && preferred?.id) {
     principleId = preferred.id;
     parsed.principle_to_practice = `${preferred.title}: ${preferred.summary ?? "Practice this today."}`;
   }
@@ -159,14 +177,23 @@ ${JSON.stringify(context)}`,
     principleId = preferred.id;
   }
 
+  const chosen =
+    context.principles.find((p) => p.id === principleId) ?? preferred;
+
   const provenance = {
+    chosen_principle_id: principleId,
+    chosen_principle_title: chosen?.title ?? null,
     source_principle_ids: context.principles.map((p) => p.id),
     source_principle_titles: context.principles.map((p) => p.title),
+    candidate_principle_titles: context.principles.map((p) => p.title),
     principle_count:
       context.provenance?.principleCount ?? context.principles.length,
     source_count: context.provenance?.sourceCount ?? 0,
-    recent_documents: context.provenance?.recentDocuments ?? [],
+    knowledge_sources: context.provenance?.documents ?? [],
+    knowledge_excerpts: context.knowledge_excerpts ?? [],
+    excluded_principle_ids: context.provenance?.excludedPrincipleIds ?? [],
     excluded_yesterday_principle_id: yesterdayPrincipleId,
+    cooldown_days: 7,
     retrieval_query: query,
   };
 
