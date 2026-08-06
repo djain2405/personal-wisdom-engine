@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
+import { CoachMarkdown } from "@/components/coach-markdown";
 
 export function SituationClient() {
   const [situation, setSituation] = useState("");
@@ -50,9 +51,7 @@ export function SituationClient() {
       {error && <p className="text-sm text-red-700">{error}</p>}
       {result && (
         <Card>
-          <div className="prose prose-stone max-w-none whitespace-pre-wrap text-sm">
-            {result}
-          </div>
+          <CoachMarkdown content={result} />
         </Card>
       )}
     </div>

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardTitle } from "@/components/ui/card";
+import { CoachMarkdown } from "@/components/coach-markdown";
 import { PRINCIPLE_CATEGORIES } from "@/lib/types";
 import type { Principle } from "@/lib/types";
 
@@ -84,9 +85,9 @@ export function PrinciplesClient({
       {synthesis && (
         <Card>
           <CardTitle>Synthesis</CardTitle>
-          <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-stone-700">
-            {synthesis}
-          </pre>
+          <div className="mt-2">
+            <CoachMarkdown content={synthesis} />
+          </div>
         </Card>
       )}
       <div className="space-y-3">

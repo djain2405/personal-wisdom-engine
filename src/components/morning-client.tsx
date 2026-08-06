@@ -191,19 +191,23 @@ export function MorningClient({
           Morning Ritual
         </h1>
         <p className="mt-1 text-sm text-stone-600 md:text-base">
-          {date} — begin with awareness, identity, and intention.
+          {date} — Who am I becoming today? Write one sentence. Everything else
+          flows from that.
         </p>
       </div>
 
       <Card className="space-y-5">
         <div>
           <Label htmlFor="becoming">Who am I becoming today?</Label>
+          <p className="mt-1 text-sm text-stone-500">
+            Example: Today I am becoming someone who follows through with joy.
+          </p>
           <Input
             id="becoming"
             className="mt-2"
             value={becomingIdentity}
             onChange={(event) => setBecomingIdentity(event.target.value)}
-            placeholder="I am becoming someone who…"
+            placeholder="Today I am becoming someone who…"
           />
         </div>
 

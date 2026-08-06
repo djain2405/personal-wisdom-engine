@@ -5,6 +5,11 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
 import type { DailyBrief } from "@/lib/types";
+import {
+  COMPASS,
+  defaultDecisionFilter,
+  defaultMiddayCheck,
+} from "@/lib/coach/compass";
 import { todayISO } from "@/lib/utils";
 
 type KnowledgeSource = {
@@ -280,14 +285,28 @@ export function CoachHomeClient({
   ];
 
   const isToday = brief.brief_date === todayISO();
-  const provenance = (
+  const raw =
     brief.raw_json &&
     typeof brief.raw_json === "object" &&
-    brief.raw_json !== null &&
-    "provenance" in brief.raw_json
-      ? (brief.raw_json as { provenance?: BriefProvenance }).provenance
+    brief.raw_json !== null
+      ? (brief.raw_json as Record<string, unknown>)
+      : null;
+  const provenance = (
+    raw && "provenance" in raw
+      ? (raw as { provenance?: BriefProvenance }).provenance
       : null
   );
+  const middayCheck =
+    (typeof raw?.midday_check === "string" && raw.midday_check.trim()) ||
+    defaultMiddayCheck();
+  const decisionFilter =
+    (typeof raw?.decision_filter === "string" && raw.decision_filter.trim()) ||
+    defaultDecisionFilter();
+
+  const compassBlocks = [
+    { label: COMPASS.midday.label, value: middayCheck },
+    { label: COMPASS.decision.label, value: decisionFilter },
+  ];
 
   return (
     <div className="space-y-6">
@@ -356,6 +375,14 @@ export function CoachHomeClient({
             <CardTitle className="text-teal-900">{b.label}</CardTitle>
             <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
               {b.value || "—"}
+            </p>
+          </Card>
+        ))}
+        {compassBlocks.map((b) => (
+          <Card key={b.label} className="animate-rise-delay-1">
+            <CardTitle className="text-teal-900">{b.label}</CardTitle>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-stone-700">
+              {b.value}
             </p>
           </Card>
         ))}

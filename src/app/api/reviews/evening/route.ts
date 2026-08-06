@@ -11,9 +11,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { narrative } = await request.json();
-  if (!narrative || typeof narrative !== "string") {
-    return NextResponse.json({ error: "Narrative required" }, { status: 400 });
+  const body = await request.json().catch(() => ({}));
+  const narrative =
+    typeof body?.narrative === "string" ? body.narrative.trim() : "";
+  const evidence = Array.isArray(body?.evidence)
+    ? body.evidence.filter((e: unknown) => typeof e === "string" && e.trim())
+    : [];
+  if (!narrative) {
+    return NextResponse.json({ error: "Evidence required" }, { status: 400 });
   }
 
   const { data: profile } = await supabase
@@ -31,8 +36,12 @@ export async function POST(request: Request) {
     const raw = await provider.generate({
       system: coachSystemPrompt(),
       maxTokens: 2200,
-      prompt: `Evening review. User's day:
+      prompt: `Evening review — Daily Compass evidence check.
 
+The user answered "What evidence did I collect today?" with these bullets:
+${evidence.length ? evidence.map((e: string, i: number) => `${i + 1}. ${e}`).join("\n") : narrative}
+
+Full narrative:
 ${narrative}
 
 Return JSON:
@@ -41,11 +50,12 @@ Return JSON:
   "patterns": "...",
   "identity_reinforce": "...",
   "tomorrow": "...",
-  "markdown": "readable markdown combining the above"
+  "markdown": "readable markdown combining the above with ## headings and bullets"
 }
 
-Use principles from context when reinforcing identity.
-When a morning check-in exists, compare the user's stated intention and becoming identity with how the day unfolded. Reference habit follow-through without shaming.
+Frame wins as identity evidence. Use principles from context when reinforcing identity.
+When a morning check-in exists, compare the user's becoming identity with the evidence they collected. Reference habit follow-through without shaming.
+Ask implicitly: did today compound who they are becoming?
 
 Context:
 ${JSON.stringify(context)}`,

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardTitle } from "@/components/ui/card";
+import { CoachMarkdown } from "@/components/coach-markdown";
 import type { MonthlyReport } from "@/lib/types";
 
 export function MonthlyReportClient({ reports }: { reports: MonthlyReport[] }) {
@@ -46,9 +47,7 @@ export function MonthlyReportClient({ reports }: { reports: MonthlyReport[] }) {
       {error && <p className="text-sm text-red-700">{error}</p>}
       {markdown && (
         <Card>
-          <pre className="whitespace-pre-wrap font-sans text-sm text-stone-700">
-            {markdown}
-          </pre>
+          <CoachMarkdown content={markdown} />
         </Card>
       )}
       <div className="space-y-2">

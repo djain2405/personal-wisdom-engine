@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { CoachMarkdown } from "@/components/coach-markdown";
 
 export function RoutineClient() {
   const [energy, setEnergy] = useState("medium");
@@ -82,9 +83,7 @@ export function RoutineClient() {
       {error && <p className="text-sm text-red-700">{error}</p>}
       {plan && (
         <Card>
-          <pre className="whitespace-pre-wrap font-sans text-sm text-stone-700">
-            {plan}
-          </pre>
+          <CoachMarkdown content={plan} />
         </Card>
       )}
     </div>

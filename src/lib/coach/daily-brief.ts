@@ -7,6 +7,11 @@ import {
   preferVariedPrinciple,
 } from "@/lib/coach/retrieval";
 import { getTodayCheckin, shiftISODate } from "@/lib/coach/morning";
+import {
+  defaultDecisionFilter,
+  defaultEveningPrompt,
+  defaultMiddayCheck,
+} from "@/lib/coach/compass";
 import { extractJson, todayISO } from "@/lib/utils";
 import type { DailyBrief } from "@/lib/types";
 
@@ -21,6 +26,8 @@ type BriefPayload = {
   priorities: string;
   mindset_reminder: string;
   mantra: string;
+  midday_check?: string;
+  decision_filter?: string;
 };
 
 function buildDailyQuery(
@@ -104,7 +111,9 @@ Return ONLY JSON:
   "principle_id": "uuid if matching a provided principle else null",
   "challenge": "...",
   "reflection_question": "...",
-  "evening_prompt": "...",
+  "evening_prompt": "What evidence did I collect today? (Daily Compass evening)",
+  "midday_check": "short Midday attention check: question + gentle redirect (2-3 sentences)",
+  "decision_filter": "Future-self decision filter: question + 3-5 concrete example actions for THIS user today",
   "priorities": "3 short bullet priorities as one string with newlines",
   "mindset_reminder": "...",
   "mantra": "short mantra"
@@ -120,6 +129,7 @@ Hard rules for variety and personalization:
 - Ground priorities in morning intention + chosen principle + knowledge_excerpts when present.
 - Priorities must be concrete actions for today — never generic filler like "Protect deep work" unless that truly matches today's intention.
 - Prefer the user's own knowledge principles over stock advice.
+- midday_check and decision_filter must follow Daily Compass: Midday = attention redirect; Decision = "What does my future self do now?" with concrete actions.
 
 Context JSON:
 ${JSON.stringify(context)}`,
@@ -141,7 +151,9 @@ ${JSON.stringify(context)}`,
       principle_id: preferred?.id ?? null,
       challenge: "Do the hard thing first for 25 minutes",
       reflection_question: "Where did I practice my chosen identity today?",
-      evening_prompt: "What happened today? What patterns showed up?",
+      evening_prompt: defaultEveningPrompt(),
+      midday_check: defaultMiddayCheck(),
+      decision_filter: defaultDecisionFilter(),
       priorities: [
         morning?.intention
           ? `1. Live today's intention: ${morning.intention.slice(0, 120)}`
@@ -149,12 +161,17 @@ ${JSON.stringify(context)}`,
         preferred
           ? `2. Practice: ${preferred.title}`
           : "2. One relationship or body touchpoint",
-        "3. Close the day with a 2-minute review",
+        "3. Close the day with three evidence bullets",
       ].join("\n"),
       mindset_reminder: "Progress compounds when principles guide action.",
       mantra: "I become who I practice being.",
     };
   }
+
+  parsed.evening_prompt = parsed.evening_prompt?.trim() || defaultEveningPrompt();
+  parsed.midday_check = parsed.midday_check?.trim() || defaultMiddayCheck();
+  parsed.decision_filter =
+    parsed.decision_filter?.trim() || defaultDecisionFilter();
 
   const candidateIds = new Set(context.principles.map((p) => p.id));
   const cooldownSet = new Set(cooldown.ids);
