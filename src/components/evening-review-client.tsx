@@ -22,7 +22,7 @@ export function EveningReviewClient({
   const [error, setError] = useState<string | null>(null);
 
   const filled = bullets.map((b) => b.trim()).filter(Boolean);
-  const canSubmit = filled.length >= 1;
+  const canSubmit = filled.length === 3;
 
   async function submit() {
     setLoading(true);
@@ -54,6 +54,10 @@ export function EveningReviewClient({
       </div>
       <div>
         <Label>{eveningPrompt?.trim() || COMPASS.evening.question}</Label>
+        <p className="mt-1 text-sm text-stone-500">
+          Three short bullets in — a full Wins / Patterns / Identity / Tomorrow
+          review out.
+        </p>
         <div className="mt-2 space-y-2">
           {bullets.map((bullet, index) => (
             <Input

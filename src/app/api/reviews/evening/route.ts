@@ -33,29 +33,55 @@ export async function POST(request: Request) {
     const provider = getAiProvider(
       (profile as { ai_provider?: string } | null)?.ai_provider,
     );
+    const evidenceList = evidence.length
+      ? evidence.map((e: string, i: number) => `${i + 1}. ${e}`).join("\n")
+      : narrative;
+
     const raw = await provider.generate({
       system: coachSystemPrompt(),
       maxTokens: 2200,
-      prompt: `Evening review — Daily Compass evidence check.
+      prompt: `Evening review — Daily Compass.
 
-The user answered "What evidence did I collect today?" with these bullets:
-${evidence.length ? evidence.map((e: string, i: number) => `${i + 1}. ${e}`).join("\n") : narrative}
+The user collected today's identity evidence (3 bullets):
+${evidenceList}
 
 Full narrative:
 ${narrative}
 
-Return JSON:
+Return ONLY JSON with these fields:
 {
-  "wins": "...",
-  "patterns": "...",
-  "identity_reinforce": "...",
-  "tomorrow": "...",
-  "markdown": "readable markdown combining the above with ## headings and bullets"
+  "wins": "3 numbered wins paraphrasing/expanding their evidence",
+  "patterns": "1-2 paragraphs naming principles/patterns (use **bold** for principle titles)",
+  "identity_reinforce": "warm paragraph linking evidence to who they're becoming / morning becoming identity",
+  "tomorrow": "concrete next-day focus in 2-4 sentences",
+  "markdown": "full formatted review (see template)"
 }
 
-Frame wins as identity evidence. Use principles from context when reinforcing identity.
-When a morning check-in exists, compare the user's becoming identity with the evidence they collected. Reference habit follow-through without shaming.
-Ask implicitly: did today compound who they are becoming?
+The "markdown" field MUST follow this exact structure (and render well as markdown):
+
+# Evening Review
+
+## Wins
+1. ...
+2. ...
+3. ...
+
+## Patterns
+...
+
+## Identity Reinforcement
+...
+
+## Tomorrow
+...
+
+Rules:
+- Ground Wins in their evidence bullets — expand them into clear identity votes, don't invent unrelated wins.
+- Patterns: name relevant principles from Context with **bold** titles when they fit.
+- Identity Reinforcement: speak to their becoming identity / dream identity; affirming and specific.
+- Tomorrow: small aligned actions, not a lecture.
+- No shame. Prefer their knowledge principles over generic advice.
+- When morning check-in exists, compare becoming identity with the evidence collected.
 
 Context:
 ${JSON.stringify(context)}`,
@@ -68,6 +94,22 @@ ${JSON.stringify(context)}`,
       tomorrow?: string;
       markdown?: string;
     }>(raw);
+
+    const fallbackMarkdown = [
+      "# Evening Review",
+      "",
+      "## Wins",
+      parsed?.wins ?? evidenceList,
+      "",
+      "## Patterns",
+      parsed?.patterns ?? "—",
+      "",
+      "## Identity Reinforcement",
+      parsed?.identity_reinforce ?? "—",
+      "",
+      "## Tomorrow",
+      parsed?.tomorrow ?? "—",
+    ].join("\n");
 
     const { data } = await supabase
       .from("evening_reviews")
@@ -130,14 +172,7 @@ ${JSON.stringify(context)}`,
 
     return NextResponse.json({
       review: data,
-      markdown:
-        parsed?.markdown ||
-        [
-          `## Wins\n${parsed?.wins ?? "—"}`,
-          `## Patterns\n${parsed?.patterns ?? "—"}`,
-          `## Identity\n${parsed?.identity_reinforce ?? "—"}`,
-          `## Tomorrow\n${parsed?.tomorrow ?? "—"}`,
-        ].join("\n\n"),
+      markdown: parsed?.markdown?.trim() || fallbackMarkdown,
     });
   } catch (e) {
     return NextResponse.json(
